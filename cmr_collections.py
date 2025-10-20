@@ -318,7 +318,7 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
                         auth=auth,
                         reader_options={
                             "variable": variable,
-                        }
+                        },
                     ) as src_dst:
                         image, _ = src_dst.tile(
                             x,
@@ -329,6 +329,7 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
                     print(f"Successfully created tile for file {granule_data_url}")
                 except Exception as e:
                     print(f"Error creating tile for file {granule_data_url}: {e}")
+                    raise e
         if tiles_url:
             print(f"Tiles URL: {tiles_url}")
         else:
