@@ -1,3 +1,4 @@
 [submodule "titiler_cmr"]
 	path = titiler_cmr
-	url = git@github.com:developmentseed/titiler-cmr.git
+	url = https://github.com/developmentseed/titiler-cmr
+
