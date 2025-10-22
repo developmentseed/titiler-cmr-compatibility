@@ -183,7 +183,7 @@ def get_data_url(granule: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     data_urls = []
     for url_info in related_urls:
         url_type = url_info.get("Type")
-        # TODO: prefer GET DATA VIA DIRECT ACCESS if available
+        # TODO(medium): prefer GET DATA VIA DIRECT ACCESS if available
         if url_type in ["GET DATA", "GET DATA VIA DIRECT ACCESS"]:
             data_urls.append(url_info)
 
@@ -272,7 +272,7 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
         else:
             granule_file_formats = [os.path.splitext(granule_data_url)[1].lstrip('.')]
 
-        # TODO: how to handle cases where there are multiple file formats?
+        # TODO(low): how to handle cases where there are multiple file formats?
         granule_file_format = granule_file_formats[0]
 
         # if granule file format is supported, extract data variables, spatial and temporal extent
@@ -299,7 +299,7 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
 
     tiles_url = None
     if backend and data_variables:
-        # TODO: smart way to identify variables
+        # TODO(high): Add support for testing tiling with rasterio
         if backend == "rasterio":
             variable = next((item for item in data_variables if item in known_bands), None)
             if variable:
@@ -307,7 +307,7 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
         else:
             variable = next((item for item in data_variables if item in known_variables), None)
             if variable:
-                tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={concept_id}&backend={backend}&variable={variable}"
+                tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={concept_id}&backend={backend}&variable={variable}&datetime={('/').join(temporal_extent)}"
                 query = {
                     "concept_id": concept_id,
                     "temporal": temporal_extent,
@@ -327,6 +327,7 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
                             z,
                             cmr_query=query,
                         )
+                        # TODO(low): add ability to render image with colormapping
                         # png_bytes = image.render(img_format="png")
                         # with open("output.png", "wb") as f: f.write(png_bytes); f.close()
                     print(f"Successfully created tile for file {granule_data_url}")
