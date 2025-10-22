@@ -7,6 +7,7 @@ import argparse
 from typing import Optional, List, Dict, Any, Tuple
 from titiler_cmr.titiler.cmr.backend import CMRBackend
 from titiler_cmr.titiler.cmr.reader import xarray_open_dataset, CustomXarrayReader
+from titiler.cmr.reader import MultiFilesBandsReader
 
 from helpers import open_xarray_dataset, open_rasterio_dataset
 from umm_helpers import parse_temporal, parse_bounds_from_spatial
@@ -203,7 +204,7 @@ def extract_data_variables(data_url: str, file_format: str, data_center_name: st
     """
     try:
         if file_format in cog_formats or file_format in cog_extensions:
-            with open_rasterio_dataset(data_url) as src:
+            with open_rasterio_dataset(data_url, data_center_name) as src:
                 data_variables = "rasterio", src.descriptions
             if not data_variables:
                 data_variables = "rasterio", ["could not extract data variables using rasterio"]
@@ -299,43 +300,52 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
 
     tiles_url = None
     if backend and data_variables:
+        query = {
+            "concept_id": concept_id,
+            "temporal": temporal_extent,
+        }        
         # TODO(high): Add support for testing tiling with rasterio
         if backend == "rasterio":
-            variable = next((item for item in data_variables if item in known_bands), None)
-            if variable:
-                tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={concept_id}&backend={backend}&bands={variable}"
-        else:
+            band = next((item for item in data_variables if item in known_bands), None)
+            if band:
+                tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={concept_id}&backend={backend}&bands={band}"
+                reader = MultiFilesBandsReader
+                reader_options = {
+                    "bands": [band]
+                }
+        elif backend == "xarray":
             variable = next((item for item in data_variables if item in known_variables), None)
             if variable:
                 tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={concept_id}&backend={backend}&variable={variable}&datetime={('/').join(temporal_extent)}"
-                query = {
-                    "concept_id": concept_id,
-                    "temporal": temporal_extent,
-                }
-                try:
-                    with CMRBackend(
-                        reader=CustomXarrayReader,
-                        auth=auth,
-                        reader_options={
-                            "variable": variable,
-                            "opener": xarray_open_dataset
-                        },
-                    ) as src_dst:
-                        image, _ = src_dst.tile(
-                            x,
-                            y,
-                            z,
-                            cmr_query=query,
-                        )
-                        # TODO(low): add ability to render image with colormapping
-                        # png_bytes = image.render(img_format="png")
-                        # with open("output.png", "wb") as f: f.write(png_bytes); f.close()
-                    print(f"Successfully created tile for file {granule_data_url}")
-                except Exception as e:
-                    print(f"Error creating tile for file {granule_data_url}: {e}")
-                    raise e
+                reader = CustomXarrayReader
+                reader_options = {
+                    "variable": variable,
+                    "opener": xarray_open_dataset
+                }                
+
+                
         if tiles_url:
             print(f"Tiles URL: {tiles_url}")
+
+            try:
+                with CMRBackend(
+                    reader=reader,
+                    auth=auth,
+                    reader_options=reader_options,
+                ) as src_dst:
+                    image, _ = src_dst.tile(
+                        x,
+                        y,
+                        z,
+                        cmr_query=query,
+                    )
+                    # TODO(low): add ability to render image with colormapping
+                    # png_bytes = image.render(img_format="png")
+                    # with open("output.png", "wb") as f: f.write(png_bytes); f.close()
+                print(f"Successfully created tile for file {granule_data_url}")
+            except Exception as e:
+                print(f"Error creating tile for file {granule_data_url}: {e}")
+                raise e        
         else:
             print("No tiles URL could be constructed")
     

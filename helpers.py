@@ -29,14 +29,14 @@ def open_xarray_dataset(url, data_center_name):
     else:
         raise ValueError(f"Unsupported URL scheme: {scheme}")
 
-def open_rasterio_dataset(url):
+def open_rasterio_dataset(url, data_center_name):
     """Open a rasterio dataset from a URL that may be HTTPS or S3."""
     scheme = urlparse(url).scheme.lower()
     if scheme in ("http", "https"):
         fs = earthaccess.get_fsspec_https_session()
         return rasterio.open(fs.open(url))
     elif scheme == "s3":
-        s3 = earthaccess.get_s3fs_session()
+        s3 = earthaccess.get_s3fs_session(daac=daac_map[data_center_name])
         return rasterio.open(s3.open(url, "rb"))
     else:
         raise ValueError(f"Unsupported URL scheme: {scheme}")
