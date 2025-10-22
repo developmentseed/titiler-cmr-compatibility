@@ -1,4 +1,5 @@
 [submodule "titiler_cmr"]
 	path = titiler_cmr
 	url = https://github.com/developmentseed/titiler-cmr
+	branch = custom-reader-with-s3-creds
 

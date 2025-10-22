@@ -6,7 +6,7 @@ import random
 import argparse
 from typing import Optional, List, Dict, Any, Tuple
 from titiler_cmr.titiler.cmr.backend import CMRBackend
-from titiler.xarray.io import Reader as XarrayReader
+from titiler_cmr.titiler.cmr.reader import xarray_open_dataset, CustomXarrayReader
 
 from helpers import open_xarray_dataset, open_rasterio_dataset
 from umm_helpers import parse_temporal, parse_bounds_from_spatial
@@ -314,10 +314,11 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
                 }
                 try:
                     with CMRBackend(
-                        reader=XarrayReader,
+                        reader=CustomXarrayReader,
                         auth=auth,
                         reader_options={
                             "variable": variable,
+                            "opener": xarray_open_dataset
                         },
                     ) as src_dst:
                         image, _ = src_dst.tile(
@@ -326,6 +327,8 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
                             z,
                             cmr_query=query,
                         )
+                        # png_bytes = image.render(img_format="png")
+                        # with open("output.png", "wb") as f: f.write(png_bytes); f.close()
                     print(f"Successfully created tile for file {granule_data_url}")
                 except Exception as e:
                     print(f"Error creating tile for file {granule_data_url}: {e}")
