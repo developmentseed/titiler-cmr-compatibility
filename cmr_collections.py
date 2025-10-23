@@ -7,7 +7,7 @@ import argparse
 from typing import Optional, List, Dict, Any, Tuple
 from titiler_cmr.titiler.cmr.backend import CMRBackend
 from titiler_cmr.titiler.cmr.reader import xarray_open_dataset
-from titiler.cmr.reader import MultiFilesBandsReader
+from rio_tiler.io import Reader
 from titiler.xarray.io import Reader as XarrayReader
 
 from helpers import open_xarray_dataset, open_rasterio_dataset
@@ -461,16 +461,21 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
         query = {
             "concept_id": concept_id,
             "temporal": temporal_extent,
-        }        
-        # TODO(high): Add support for testing tiling with rasterio
+        }
+        shared_args = {
+            "tile_x": x,
+            "tile_y": y,
+            "tile_z": z,
+            "cmr_query": query,
+        }
+        reader_options = {}
+
         if backend == "rasterio":
             band = next((item for item in data_variables if item in known_bands), None)
             if band:
                 tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={concept_id}&backend={backend}&bands={band}"
-                reader = MultiFilesBandsReader
-                reader_options = {
-                    "bands": [band]
-                }
+                reader = Reader
+                shared_args["bands_regex"] = ".*"
         elif backend == "xarray":
             variable = next((item for item in data_variables if item in known_variables), None)
             if variable:
@@ -491,12 +496,8 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
                     auth=auth,
                     reader_options=reader_options,
                 ) as src_dst:
-                    image, _ = src_dst.tile(
-                        x,
-                        y,
-                        z,
-                        cmr_query=query,
-                    )
+                    image, _ = src_dst.tile(**shared_args)
+
                     # TODO(low): add ability to render image with colormapping
                     # png_bytes = image.render(img_format="png")
                     # with open("output.png", "wb") as f: f.write(png_bytes); f.close()

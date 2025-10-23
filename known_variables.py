@@ -5,4 +5,4 @@ known_variables = set(["Tair", "SnowDepth", "Rainf", "Snowf_tavg", "wind"] + \
 
 known_bands = set(["Red", "Green", "Blue", "Cirrus", "Swir", "Band 1"] + \
                   ["Red_Edge1", "Red_Edge2", "Red_Edge3", "TIRS1", "SWIR1", "SWIR2"] + \
-                  ["Water_Vapor", "NIR_Narrow",])
+                  ["Water_Vapor", "NIR_Narrow", "Coastal_Aerosol"])
