@@ -274,7 +274,8 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
 
     # Get collection concept ID from granule
     granule_umm = granule.get("umm", {})
-    collection_concept_id = granule_umm.get("CollectionReference", {}).get("CollectionConceptId")
+    granule_meta = granule.get("meta", {})
+    collection_concept_id = granule_meta.get("collection-concept-id", None)
 
     if not collection_concept_id:
         print("Could not find collection concept ID in granule metadata")
@@ -301,8 +302,7 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
         return None
 
     # Get data center name
-    data_centers = granule_umm.get("DataCenters", [])
-    data_center_name = data_centers[0].get("ShortName", "Unknown") if data_centers else "Unknown"
+    data_center_name = granule_meta["provider-id"]
 
     # Extract data variables
     backend, data_variables = extract_data_variables(granule_data_url, granule_format, data_center_name)
@@ -322,16 +322,24 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
 
     # Generate tiles URL
     tiles_url = None
-    query = {
+    cmr_query = {
         "concept_id": collection_concept_id,
         "temporal": temporal_extent,
     }
+    shared_args = {
+        "tile_x": x,
+        "tile_y": y,
+        "tile_z": z,
+        "cmr_query": cmr_query
+    }
+    reader_options = {}
 
     if backend == "rasterio":
         band = next((item for item in data_variables if item in known_bands), None)
         if band:
             tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={collection_concept_id}&backend={backend}&bands={band}"
             print(f"Using band: {band}")
+            shared_args["bands_regex"] = ".*"
         else:
             print("No known band found for rasterio backend")
     elif backend == "xarray":
@@ -348,8 +356,7 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
         # Test the tile generation
         try:
             if backend == "rasterio":
-                reader = MultiFilesBandsReader
-                reader_options = {"bands": [band]}
+                reader = Reader
             else:  # xarray
                 reader = XarrayReader
                 reader_options = {
@@ -362,16 +369,12 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
                 auth=auth,
                 reader_options=reader_options,
             ) as src_dst:
-                image, _ = src_dst.tile(
-                    x,
-                    y,
-                    z,
-                    cmr_query=query,
-                )
+                image, _ = src_dst.tile(**shared_args)
             print("✓ Successfully tested tile generation")
         except Exception as e:
             print(f"✗ Error testing tile generation: {e}")
-            return None
+            raise e
+            # return None
 
     return tiles_url
 
@@ -423,6 +426,7 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
 
     granule = fetch_granule_metadata(concept_id)
     if granule:
+        print(f"Granule concept id is {granule["meta"]["concept-id"]}")
         # get granule file format
         granule_data_url = get_data_url(granule)
         granule_format = extract_file_format_from_granule(granule)

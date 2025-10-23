@@ -10,6 +10,7 @@ daac_map = {
     "NASA/JPL/PODAAC": "PODAAC",
     "ASF": "ASF",
     "LP DAAC": "LPDAAC",
+    "LPCLOUD": "LPDAAC",
     "NASA/GSFC/SED/ESD/TISL/GESDISC": "GES_DISC",
     "NASA/GSFC/SED/ESD/GCDC/OB.DAAC": "OBDAAC",
     "SEDAC": "SEDAC",
@@ -36,7 +37,8 @@ def open_rasterio_dataset(url, data_center_name):
         fs = earthaccess.get_fsspec_https_session()
         return rasterio.open(fs.open(url))
     elif scheme == "s3":
-        s3 = earthaccess.get_s3fs_session(daac=daac_map[data_center_name])
+        daac = data_center_name if data_center_name in daac_map.values() else daac_map[data_center_name]
+        s3 = earthaccess.get_s3fs_session(daac=daac)
         return rasterio.open(s3.open(url, "rb"))
     else:
         raise ValueError(f"Unsupported URL scheme: {scheme}")
