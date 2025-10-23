@@ -6,8 +6,9 @@ import random
 import argparse
 from typing import Optional, List, Dict, Any, Tuple
 from titiler_cmr.titiler.cmr.backend import CMRBackend
-from titiler_cmr.titiler.cmr.reader import xarray_open_dataset, CustomXarrayReader
+from titiler_cmr.titiler.cmr.reader import xarray_open_dataset
 from titiler.cmr.reader import MultiFilesBandsReader
+from titiler.xarray.io import Reader as XarrayReader
 
 from helpers import open_xarray_dataset, open_rasterio_dataset
 from umm_helpers import parse_temporal, parse_bounds_from_spatial
@@ -317,7 +318,7 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
             variable = next((item for item in data_variables if item in known_variables), None)
             if variable:
                 tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={concept_id}&backend={backend}&variable={variable}&datetime={('/').join(temporal_extent)}"
-                reader = CustomXarrayReader
+                reader = XarrayReader
                 reader_options = {
                     "variable": variable,
                     "opener": xarray_open_dataset
