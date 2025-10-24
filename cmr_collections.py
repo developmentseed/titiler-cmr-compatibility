@@ -5,8 +5,8 @@ import earthaccess
 import random
 import argparse
 from typing import Optional, List, Dict, Any, Tuple
-from titiler_cmr.titiler.cmr.backend import CMRBackend
-from titiler_cmr.titiler.cmr.reader import xarray_open_dataset
+from titiler.cmr.backend import CMRBackend
+from titiler.cmr.reader import MultiFilesBandsReader, xarray_open_dataset
 from rio_tiler.io import Reader
 from titiler.xarray.io import Reader as XarrayReader
 
@@ -310,15 +310,9 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
         print("Could not extract data variables")
         return None
 
-    print(f"Backend: {backend}")
-    print(f"Data variables: {data_variables}")
-
     # Extract spatial and temporal extent
     spatial_extent = parse_bounds_from_spatial(granule_umm)
     temporal_extent = parse_temporal(granule_umm)
-
-    print(f"Spatial extent: {spatial_extent}")
-    print(f"Temporal extent: {temporal_extent}")
 
     # Generate tiles URL
     tiles_url = None
@@ -338,15 +332,20 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
         band = next((item for item in data_variables if item in known_bands), None)
         if band:
             tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={collection_concept_id}&backend={backend}&bands={band}"
-            print(f"Using band: {band}")
-            shared_args["bands_regex"] = ".*"
+            reader = Reader
+            shared_args["bands_regex"] = "B01"
         else:
-            print("No known band found for rasterio backend")
+            print("No known band found for rasterio backend")            
     elif backend == "xarray":
         variable = next((item for item in data_variables if item in known_variables), None)
         if variable:
             tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={collection_concept_id}&backend={backend}&variable={variable}&datetime={('/').join(temporal_extent)}"
             print(f"Using variable: {variable}")
+            reader = XarrayReader
+            reader_options = {
+                "variable": variable,
+                "opener": xarray_open_dataset
+            }            
         else:
             print("No known variable found for xarray backend")
 
@@ -355,15 +354,6 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
 
         # Test the tile generation
         try:
-            if backend == "rasterio":
-                reader = Reader
-            else:  # xarray
-                reader = XarrayReader
-                reader_options = {
-                    "variable": variable,
-                    "opener": xarray_open_dataset
-                }
-
             with CMRBackend(
                 reader=reader,
                 auth=auth,
