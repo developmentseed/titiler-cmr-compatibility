@@ -7,6 +7,7 @@ generation information and testing tile generation functionality.
 
 import logging
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional, List, Tuple, Any, Type
 
 from titiler.cmr.backend import CMRBackend
@@ -26,6 +27,13 @@ from known_variables import known_variables, known_bands
 
 logger = logging.getLogger(__name__)
 
+
+class IncompatibilityReason(str, Enum):
+    """Reasons why tiling might not be compatible with a granule."""
+    UNSUPPORTED_FORMAT = "unsupported_format"
+    CANT_OPEN_FILE = "cant_open_file"
+    CANT_EXTRACT_VARIABLES = "cant_extract_variables"
+    TILE_GENERATION_FAILED = "tile_generation_failed"
 
 @dataclass
 class GranuleTilingInfo:
@@ -52,6 +60,10 @@ class GranuleTilingInfo:
     reader: Optional[Type] = None
     reader_options: Optional[dict] = None
     variable: Optional[str] = None
+
+    # tiling result fields
+    tiling_compatible: bool = False
+    incompatible_reason: Optional[IncompatibilityReason] = None
 
     def __post_init__(self):
         """Initialize computed fields based on backend and data variables."""
@@ -149,14 +161,7 @@ class GranuleTilingInfo:
 
         Returns:
             True if tile generation succeeded, False otherwise
-
-        Raises:
-            Exception: If tile generation fails
         """
-        if not self.reader or not self.temporal_extent:
-            logger.error("Cannot test tiling: missing reader or temporal extent")
-            return False
-
         cmr_query = {
             "concept_id": self.collection_concept_id,
             "temporal": self.temporal_extent,
@@ -175,9 +180,38 @@ class GranuleTilingInfo:
                 auth=auth,
                 reader_options=self.reader_options or {},
             ) as src_dst:
-                image, _ = src_dst.tile(**shared_args)
+                _, _ = src_dst.tile(**shared_args)
             logger.info(f"Successfully tested tile generation for granule {self.concept_id}")
+            self.tiling_compatible = True
+            self.incompatible_reason = None
+            self.error_message = None
             return True
         except Exception as e:
-            logger.error(f"Error testing tile generation for granule {self.concept_id}: {e}")
-            raise
+            error_message = f"Error testing tile generation for granule {self.concept_id}: {e}"
+            logger.error(error_message)
+
+            self.tiling_compatible = False
+            self.error_message = str(e)
+            self.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED
+            return False
+
+    def to_report_dict(self) -> dict:
+        """
+        Convert tiling info to a dictionary suitable for assessment reports.
+
+        Returns:
+            Dictionary containing key fields for reporting
+        """
+        return {
+            "collection_concept_id": self.collection_concept_id,
+            "concept_id": self.concept_id,
+            "backend": self.backend,
+            "format": self.format,
+            "extension": self.extension,
+            "tiling_compatible": self.tiling_compatible,
+            "incompatible_reason": self.incompatible_reason.value if self.incompatible_reason else None,
+            "error_message": self.error_message,
+            "tiles_url": self.tiles_url,
+            "variable": self.variable,
+            "data_variables": self.data_variables,
+        }
