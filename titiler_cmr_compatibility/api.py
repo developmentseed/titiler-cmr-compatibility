@@ -18,17 +18,19 @@ logger = logging.getLogger(__name__)
 
 def fetch_cmr_collections(
     page_size: int = 10,
-    concept_id: Optional[str] = None
-) -> List[Dict[str, Any]]:
+    concept_id: Optional[str] = None,
+    page_num: Optional[int] = None
+) -> tuple[List[Dict[str, Any]], int]:
     """
     Fetch collections from CMR in UMM JSON format.
 
     Args:
         page_size: Number of collections to retrieve per request
         concept_id: Optional specific collection concept ID to search for
+        page_num: Optional page number for pagination (1-indexed)
 
     Returns:
-        List of collection metadata dictionaries
+        Tuple of (list of collection metadata dictionaries, total hits count)
 
     Raises:
         requests.exceptions.RequestException: If the API request fails
@@ -45,6 +47,10 @@ def fetch_cmr_collections(
     if concept_id:
         params["concept_id"] = concept_id
 
+    # Add page_num for pagination
+    if page_num is not None:
+        params["page_num"] = page_num
+
     headers = {
         "Accept": "application/vnd.nasa.cmr.umm_results+json"
     }
@@ -59,8 +65,9 @@ def fetch_cmr_collections(
         response.raise_for_status()
 
         data = response.json()
-        logger.info(f"Total hits: {data.get('hits')}")
-        return data.get("items", [])
+        total_hits = data.get('hits', 0)
+        logger.info(f"Total hits: {total_hits}")
+        return data.get("items", []), total_hits
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching collections from CMR: {e}")
         raise
