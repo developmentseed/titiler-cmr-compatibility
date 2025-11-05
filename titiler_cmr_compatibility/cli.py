@@ -108,6 +108,8 @@ def process_collections(
                         print(f"    ... and {len(ginfo.data_variables) - 5} more")
                 if ginfo.tiles_url:
                     print(f"  Tiles URL: {ginfo.tiles_url}")
+                    print("Testing tile generation:")
+                    print(ginfo.test_tiling(auth))
             else:
                 print("  Failed to extract granule information")
 

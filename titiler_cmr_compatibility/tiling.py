@@ -99,7 +99,7 @@ class GranuleTilingInfo:
         if self.backend == "rasterio":
             band = next(
                 (item for item in self.data_variables if item in known_bands),
-                None
+                self.data_variables[0]
             )
             if band:
                 return f"{base_url}&bands={band}"
@@ -112,7 +112,7 @@ class GranuleTilingInfo:
         elif self.backend == "xarray":
             variable = next(
                 (item for item in self.data_variables if item in known_variables),
-                None
+                self.data_variables[0]
             )
             if variable and self.temporal_extent:
                 datetime_param = '/'.join(self.temporal_extent)

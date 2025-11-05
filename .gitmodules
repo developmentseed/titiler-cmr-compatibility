@@ -1,5 +1,5 @@
 [submodule "titiler_cmr"]
 	path = titiler_cmr
 	url = https://github.com/developmentseed/titiler-cmr
-	branch = ab/sessions-reader
+	branch = ab/combine-fixes
 
