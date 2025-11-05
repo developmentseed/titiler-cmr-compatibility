@@ -224,7 +224,7 @@ def get_data_url(granule: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     for url_info in related_urls:
         url_type = url_info.get("Type")
         # TODO(medium): prefer GET DATA VIA DIRECT ACCESS if available
-        if url_type in ["GET DATA", "GET DATA VIA DIRECT ACCESS"]:
+        if url_type in ["GET DATA"]:#, "GET DATA VIA DIRECT ACCESS"]:
             data_urls.append(url_info)
 
     if len(data_urls) == 1:
@@ -264,8 +264,9 @@ class GranuleTilingInfo(TypedDict):
     temporal_extent: Optional[tuple]
     data_variables: Optional[list[str]]
     backend: Optional[str]
-    granule_format: Optional[str]
-    granule_extension: Optional[str]
+    data_url: Optional[str]
+    format: Optional[str]
+    extension: Optional[str]
 
     def __attrs_post_init__(self):
         self.tiles_url = self.generate_tiles_url_for_granule()
@@ -310,7 +311,7 @@ class GranuleTilingInfo(TypedDict):
         tiles_url = None
 
         if self.backend == "rasterio":
-            band = next((item for item in granule_info,data_variables if item in known_bands), None)
+            band = next((item for item in self.data_variables if item in known_bands), None)
             if band:
                 tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={self.collection_concept_id}&backend={self.backend}&bands={band}"
             else:
@@ -362,28 +363,35 @@ def extract_granule_tiling_info(granule: Dict[str, Any], collection_file_format:
 
     if not is_supported:
         print(not_supported_message)
-        return None
+        return GranuleTilingInfo(
+            collection_concept_id=collection_concept_id,
+            concept_id=granule_umm.get("concept-id"),
+            data_url=granule_data_url,
+            format=granule_format,
+            extension=granule_extension
+        )
+    else:
+        # Get data center name
+        data_center_name = granule_meta["provider-id"]
 
-    # Get data center name
-    data_center_name = granule_meta["provider-id"]
+        # Extract data variables
+        backend, data_variables = extract_data_variables(granule_data_url, granule_format, data_center_name)
+        if not backend or not data_variables:
+            print("Could not extract data variables")
+            return None
 
-    # Extract data variables
-    backend, data_variables = extract_data_variables(granule_data_url, granule_format, data_center_name)
-    if not backend or not data_variables:
-        print("Could not extract data variables")
-        return None
-
-    temporal_extent = parse_temporal(granule_umm)
-    return GranuleTilingInfo(
-        collection_concept_id=collection_concept_id,
-        concept_id=granule_umm.get("concept-id"),
-        data_centers=data_centers,
-        temporal_extent=temporal_extent,
-        data_variables=data_variables,
-        backend=backend,
-        granule_format=granule_format,
-        granule_extension=granule_extension
-    )
+        temporal_extent = parse_temporal(granule_umm)
+        return GranuleTilingInfo(
+            collection_concept_id=collection_concept_id,
+            concept_id=granule_umm.get("concept-id"),
+            data_centers=data_centers,
+            temporal_extent=temporal_extent,
+            data_variables=data_variables,
+            backend=backend,
+            data_url=granule_data_url,
+            format=granule_format,
+            extension=granule_extension
+        )
 
 def extract_random_granule_info(collection: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -465,17 +473,10 @@ def main():
     print("=" * 80)
 
     for idx, collection in enumerate(collections, 1):
-        info = extract_random_granule_info(collection)
+        ginfo = extract_random_granule_info(collection)
 
-        print(f"\nCollection {idx}:")
-        print(f"  Concept ID: {info['concept_id']}")
-        print(f"  Collection File Formats: {', '.join(info['collection_file_formats']) if info['collection_file_formats'] else 'None'}")
-        print(f"  Granule File Formats: {', '.join(info['granule_file_formats']) if info['granule_file_formats'] else 'None'}")
-        print(f"  Data Variables: {info['data_variables'] if info['data_variables'] else 'None'}")
-        print(f"  Spatial Extent: {info['spatial_extent'] if info['spatial_extent'] else 'None'}")
-        print(f"  Temporal Extent: {info['temporal_extent'] if info['temporal_extent'] else 'None'}")
-        print(f"  Data Centers: {', '.join(info['data_centers']) if info['data_centers'] else 'None'}")
-        print(f"  Data URL: {info['granule_data_url'] if info['granule_data_url'] else 'None'}")
+        print(f"Collection {idx}:")
+        print(ginfo)
 
         print("-" * 80)
 
