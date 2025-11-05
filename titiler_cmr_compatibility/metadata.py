@@ -215,7 +215,6 @@ def _create_supported_granule_info(
     if not backend or not data_variables:
         error_message = f"Could not extract data variables for granule {granule_umm.get('GranuleUR')}"
         logger.error(error_message)
-        return None
 
     temporal_extent = parse_temporal(granule_umm)
 
