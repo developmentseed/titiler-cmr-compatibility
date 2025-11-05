@@ -169,7 +169,7 @@ def _create_unsupported_granule_info(
         data_url=granule_data_url,
         format=granule_format,
         extension=granule_extension,
-        tiling_incompatible_reason=IncompatibilityReason.UNSUPPORTED_FORMAT
+        incompatible_reason=IncompatibilityReason.UNSUPPORTED_FORMAT
     )
 
 def _create_supported_granule_info(
