@@ -107,18 +107,15 @@ def extract_data_variables(
     Returns:
         Tuple of (backend_name, list_of_variables) or (None, None) on error
     """
+    data_variables = []
     try:
         if file_format in COG_FORMATS or file_format in COG_EXTENSIONS:
             with open_rasterio_dataset(data_url, data_center_name) as src:
                 data_variables = src.descriptions
-            if not data_variables:
-                data_variables = ["could not extract data variables using rasterio"]
             return "rasterio", data_variables
         else:
             ds = open_xarray_dataset(data_url, data_center_name)
             data_variables = list(ds.data_vars.keys())
-            if not data_variables:
-                data_variables = ["could not extract data variables using xarray"]
             return "xarray", data_variables
     except Exception as e:
         logger.error(f"Error opening file {data_url}: {e}")
@@ -214,8 +211,10 @@ def _create_supported_granule_info(
         data_center_name
     )
 
+    error_message = None
     if not backend or not data_variables:
-        logger.error(f"Could not extract data variables for granule {granule_umm.get('GranuleUR')}")
+        error_message = f"Could not extract data variables for granule {granule_umm.get('GranuleUR')}"
+        logger.error(error_message)
         return None
 
     temporal_extent = parse_temporal(granule_umm)
@@ -229,7 +228,8 @@ def _create_supported_granule_info(
         backend=backend,
         data_url=granule_data_url,
         format=granule_format,
-        extension=granule_extension
+        extension=granule_extension,
+        error_message=error_message
     )
 
 

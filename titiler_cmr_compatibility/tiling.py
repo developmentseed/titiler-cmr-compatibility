@@ -45,6 +45,7 @@ class GranuleTilingInfo:
     data_url: Optional[str] = None
     format: Optional[str] = None
     extension: Optional[str] = None
+    error_message: Optional[str] = None
 
     # Computed fields (set in __post_init__)
     tiles_url: Optional[str] = None
