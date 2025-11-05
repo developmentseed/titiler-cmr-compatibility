@@ -4,7 +4,7 @@ import os
 import earthaccess
 import random
 import argparse
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, TypedDict
 from titiler.cmr.backend import CMRBackend
 from titiler.cmr.reader import MultiFilesBandsReader, xarray_open_dataset
 from rio_tiler.io import Reader
@@ -14,7 +14,20 @@ from helpers import open_xarray_dataset, open_rasterio_dataset
 from umm_helpers import parse_temporal, parse_bounds_from_spatial
 
 titiler_cmr_endpoint = "https://staging.openveda.cloud/api/titiler-cmr"
+granules_search_url = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
 x, y, z = 0, 0, 0
+
+hdf_formats = ["HDF", "HDF5", "HDF-EOS5"]
+hdf_extensions = ["hdf", "hdf5", "h5"]
+netcdf_formats = ["NetCDF", "netCDF-4", "netCDFnetCDF-4 classic"]
+netcdf_extensions = ["nc", "nc4"]
+cog_formats = ["COG"]
+cog_extensions = ["cog", "tif", "tiff"]
+zarr_formats = ["zarr"]
+zarr_extensions = ["zarr"]
+supported_formats = hdf_formats + netcdf_formats + cog_formats + zarr_formats
+supported_extensions = hdf_extensions + netcdf_extensions + cog_extensions + zarr_extensions
+
 from known_variables import known_variables, known_bands
 
 def fetch_cmr_collections(page_size: int = 10, concept_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -56,10 +69,9 @@ def fetch_cmr_collections(page_size: int = 10, concept_id: Optional[str] = None)
         print(f"Error fetching collections from CMR: {e}")
         return []
 
-
-def fetch_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
+def fetch_random_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
     """
-    Fetch the first granule metadata for a given collection concept ID.
+    Fetch the random granule metadata for a given collection concept ID.
 
     Args:
         concept_id: Collection concept ID
@@ -67,7 +79,6 @@ def fetch_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
     Returns:
         First granule metadata dictionary or None if no granules found
     """
-    url = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
     params = {
         "collection_concept_id": concept_id,
         "page_size": 1
@@ -78,10 +89,11 @@ def fetch_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
     }
 
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=30)
+        response = requests.get(granules_search_url, params=params, headers=headers, timeout=30)
         total_num_granules = response.json().get("hits")
+        # You can not page past the 1 millionth item.
         params["offset"] = random.randint(0, min(total_num_granules, int(1e6)))
-        response = requests.get(url, params=params, headers=headers, timeout=30)
+        response = requests.get(granules_search_url, params=params, headers=headers, timeout=30)
         response.raise_for_status()
 
         data = response.json()
@@ -94,7 +106,6 @@ def fetch_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
         print(f"Error fetching granule metadata for collection {concept_id}: {e}")
         return None
 
-
 def fetch_granule_by_id(granule_id: str) -> Optional[Dict[str, Any]]:
     """
     Fetch granule metadata by granule concept ID.
@@ -105,7 +116,6 @@ def fetch_granule_by_id(granule_id: str) -> Optional[Dict[str, Any]]:
     Returns:
         Granule metadata dictionary or None if not found
     """
-    url = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
     params = {
         "concept_id": granule_id,
         "page_size": 1
@@ -116,7 +126,7 @@ def fetch_granule_by_id(granule_id: str) -> Optional[Dict[str, Any]]:
     }
 
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=30)
+        response = requests.get(granules_search_url, params=params, headers=headers, timeout=30)
         response.raise_for_status()
 
         data = response.json()
@@ -129,17 +139,7 @@ def fetch_granule_by_id(granule_id: str) -> Optional[Dict[str, Any]]:
         print(f"Error fetching granule metadata for granule {granule_id}: {e}")
         return None
 
-hdf_formats = ["HDF", "HDF5", "HDF-EOS5"]
-hdf_extensions = ["hdf", "hdf5", "h5"]
-netcdf_formats = ["NetCDF", "netCDF-4", "netCDFnetCDF-4 classic"]
-netcdf_extensions = ["nc", "nc4"]
-cog_formats = ["COG"]
-cog_extensions = ["cog", "tif", "tiff"]
-zarr_formats = ["Zarr"]
-zarr_extensions = ["zarr"]
-supported_formats = hdf_formats + netcdf_formats + cog_formats + zarr_formats + hdf_extensions + netcdf_extensions + cog_extensions + zarr_extensions
-
-def extract_file_format_from_granule(granule: Dict[str, Any]) -> Optional[str]:
+def extract_file_format_from_granule_metadata(granule_metadata: Dict[str, Any]) -> Optional[str]:
     """
     Extract file format from granule metadata.
     First checks DataGranule/ArchiveAndDistributionInformation/Format,
@@ -151,7 +151,7 @@ def extract_file_format_from_granule(granule: Dict[str, Any]) -> Optional[str]:
     Returns:
         File format string or None if not found
     """
-    umm = granule.get("umm", {})
+    umm = granule_metadata.get("umm", {})
 
     # First, try to get format from DataGranule/ArchiveAndDistributionInformation/Format
     data_granule = umm.get("DataGranule", {})
@@ -160,6 +160,7 @@ def extract_file_format_from_granule(granule: Dict[str, Any]) -> Optional[str]:
     # Handle both list and dict formats for ArchiveAndDistributionInformation
     if isinstance(archive_info, list) and archive_info:
         archive_info = archive_info[0]  # Take the first item if it's a list
+
     # it seems very rare to have the format provided
     if isinstance(archive_info, list) and archive_info:
         format_info = archive_info[0]
@@ -184,29 +185,31 @@ def is_supported_format(file_format: str) -> bool:
     Returns:
         True if format is supported, False otherwise
     """
-
-    # Check both the format name and extension mappings
-    format_upper = file_format.upper()
+    format_lower = file_format.lower()
 
     # Direct format name matches
-    if format_upper in [fmt.upper() for fmt in supported_formats]:
+    if format_lower in [fmt.lower() for fmt in supported_formats]:
         return True
 
-    # Extension to format mappings
-    extension_mappings = {
-        'NC': ['NetCDF', 'netCDF-4', 'netCDFnetCDF-4 classic'],
-        'NC4': ['NetCDF', 'netCDF-4', 'netCDFnetCDF-4 classic'],
-        'H5': ['HDF', 'HDF5', 'HDF-EOS5'],
-        'HDF': ['HDF', 'HDF5', 'HDF-EOS5'],
-        'HDF5': ['HDF', 'HDF5', 'HDF-EOS5'],
-        'TIF': ['COG'],
-        'TIFF': ['COG'],
-        'COG': ['COG'],
-        'ZARR': ['Zarr']
-    }
-
     # Check if the format is a supported extension
-    if format_upper in extension_mappings:
+    if format_lower in [fmt.lower() for fmt in supported_extensions]:
+        return True
+
+    return False
+
+def is_supported_extension(file_ext: str) -> bool:
+    """
+    Check if the file extension may be supported
+
+    Args:
+        file_ext: File extension string
+
+    Returns:
+        True if format is supported, False otherwise
+    """
+    ext_lower = file_ext.lower()
+
+    if ext_lower in [ext.lower() for ext in supported_extensions]:
         return True
 
     return False
@@ -254,7 +257,74 @@ def extract_data_variables(data_url: str, file_format: str, data_center_name: st
         print(f"Error opening file {data_url}: {e}")
         return None, None
 
-def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
+class GranuleTilingInfo(TypedDict):
+    collection_concept_id: str
+    concept_id: str
+    data_centers: Optional[list[str]]
+    temporal_extent: Optional[tuple]
+    data_variables: Optional[list[str]]
+    backend: Optional[str]
+    granule_format: Optional[str]
+    granule_extension: Optional[str]
+
+    def __attrs_post_init__(self):
+        self.tiles_url = self.generate_tiles_url_for_granule()
+        if self.backend == "rasterio":
+            self.reader = Reader
+            self.reader_options = {}
+        elif self.backend == "xarray":
+            self.reader = XarrayReader
+            self.variable = next((item for item in self.data_variables if item in known_variables), None)
+            self.reader_options = {
+                "variable": self.variable,
+                "opener": xarray_open_dataset
+            }
+
+    def test_tiling(self):
+        cmr_query = {
+            "concept_id": self.collection_concept_id,
+            "temporal": self.temporal_extent,
+        }
+        shared_args = {
+            "tile_x": x,
+            "tile_y": y,
+            "tile_z": z,
+            "cmr_query": cmr_query
+        }
+        # Test the tile generation
+        try:
+            with CMRBackend(
+                reader=self.reader,
+                auth=auth,
+                reader_options=self.reader_options,
+            ) as src_dst:
+                image, _ = src_dst.tile(**shared_args)
+            print("✓ Successfully tested tile generation")
+        except Exception as e:
+            print(f"✗ Error testing tile generation: {e}")
+            raise e
+            # return None
+
+    def generate_tiles_url_for_granule(self) -> Optional[str]:
+        # Generate tiles URL
+        tiles_url = None
+
+        if self.backend == "rasterio":
+            band = next((item for item in granule_info,data_variables if item in known_bands), None)
+            if band:
+                tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={self.collection_concept_id}&backend={self.backend}&bands={band}"
+            else:
+                print("No known band found for rasterio backend")
+        elif self.backend == "xarray":
+            variable = next((item for item in self.data_variables if item in known_variables), None)
+            if variable:
+                tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={self.collection_concept_id}&backend={self.backend}&variable={variable}&datetime={('/').join(self.temporal_extent)}"
+            else:
+                print("No known variable found for xarray backend")
+
+        return tiles_url
+
+def extract_granule_tiling_info(granule: Dict[str, Any], collection_file_format: Optional[str] = None, data_centers: Optional[list[str]] = None) -> Optional[str]:
     """
     Generate a tiles URL for a specific granule.
 
@@ -264,14 +334,6 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
     Returns:
         Tiles URL string or None if unable to generate
     """
-    print(f"Fetching granule metadata for granule ID: {granule_id}")
-
-    # Fetch granule metadata
-    granule = fetch_granule_by_id(granule_id)
-    if not granule:
-        print(f"Could not find granule with ID: {granule_id}")
-        return None
-
     # Get collection concept ID from granule
     granule_umm = granule.get("umm", {})
     granule_meta = granule.get("meta", {})
@@ -289,16 +351,17 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
         print("Could not find data URL in granule metadata")
         return None
 
-    granule_format = extract_file_format_from_granule(granule)
-    if not granule_format:
-        granule_format = os.path.splitext(granule_data_url)[1].lstrip('.')
+    granule_format = collection_file_format or extract_file_format_from_granule_metadata(granule)
+    granule_extension = os.path.splitext(granule_data_url)[1].lstrip('.')
+    if granule_format is not None:
+        is_supported = is_supported_format(granule_format)
+        not_supported_message = f"Format {granule_format} is not supported"
+    else:
+        is_supported = is_supported_extension(granule_extension)
+        not_supported_message = f"Extension {granule_extension} is not supported"
 
-    print(f"Granule format: {granule_format}")
-    print(f"Data URL: {granule_data_url}")
-
-    # Check if format is supported
-    if not is_supported_format(granule_format):
-        print(f"Format {granule_format} is not supported")
+    if not is_supported:
+        print(not_supported_message)
         return None
 
     # Get data center name
@@ -310,66 +373,19 @@ def generate_tiles_url_for_granule(granule_id: str) -> Optional[str]:
         print("Could not extract data variables")
         return None
 
-    # Extract spatial and temporal extent
-    spatial_extent = parse_bounds_from_spatial(granule_umm)
     temporal_extent = parse_temporal(granule_umm)
+    return GranuleTilingInfo(
+        collection_concept_id=collection_concept_id,
+        concept_id=granule_umm.get("concept-id"),
+        data_centers=data_centers,
+        temporal_extent=temporal_extent,
+        data_variables=data_variables,
+        backend=backend,
+        granule_format=granule_format,
+        granule_extension=granule_extension
+    )
 
-    # Generate tiles URL
-    tiles_url = None
-    cmr_query = {
-        "concept_id": collection_concept_id,
-        "temporal": temporal_extent,
-    }
-    shared_args = {
-        "tile_x": x,
-        "tile_y": y,
-        "tile_z": z,
-        "cmr_query": cmr_query
-    }
-    reader_options = {}
-
-    if backend == "rasterio":
-        band = next((item for item in data_variables if item in known_bands), None)
-        if band:
-            tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={collection_concept_id}&backend={backend}&bands={band}"
-            reader = Reader
-            shared_args["bands_regex"] = "B01"
-        else:
-            print("No known band found for rasterio backend")            
-    elif backend == "xarray":
-        variable = next((item for item in data_variables if item in known_variables), None)
-        if variable:
-            tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={collection_concept_id}&backend={backend}&variable={variable}&datetime={('/').join(temporal_extent)}"
-            print(f"Using variable: {variable}")
-            reader = XarrayReader
-            reader_options = {
-                "variable": variable,
-                "opener": xarray_open_dataset
-            }            
-        else:
-            print("No known variable found for xarray backend")
-
-    if tiles_url:
-        print(f"\nGenerated Tiles URL: {tiles_url}")
-
-        # Test the tile generation
-        try:
-            with CMRBackend(
-                reader=reader,
-                auth=auth,
-                reader_options=reader_options,
-            ) as src_dst:
-                image, _ = src_dst.tile(**shared_args)
-            print("✓ Successfully tested tile generation")
-        except Exception as e:
-            print(f"✗ Error testing tile generation: {e}")
-            raise e
-            # return None
-
-    return tiles_url
-
-
-def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
+def extract_random_granule_info(collection: Dict[str, Any]) -> Dict[str, Any]:
     """
     Extract relevant metadata from a UMM JSON collection response.
 
@@ -385,25 +401,16 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
     concept_id = collection.get("meta", {}).get("concept-id", "Unknown")
 
     # Extract collection-level file archive format
-    collection_file_formats = []
+    collection_file_format = None
     archive_info = umm.get("ArchiveAndDistributionInformation", {})
     file_archive_info = archive_info.get("FileArchiveInformation", None)
 
     if file_archive_info:
         if isinstance(file_archive_info, dict):
-            collection_file_formats.append(file_archive_info.get("Format", "Unknown"))
+            collection_file_format = file_archive_info.get("Format", "Unknown")
         ## TODO: handle cases where there are multiple file formats
         elif isinstance(file_archive_info, list):
-            for archive in file_archive_info:
-                collection_file_formats.append(archive.get("Format", "Unknown"))
-
-    # Extract file format from granule metadata and data variables if supported
-    granule_file_formats = []
-    data_variables = []
-    backend = None
-    spatial_extent = None
-    temporal_extent = None
-    granule_data_url = None
+            collection_file_format = file_archive_info[0].get("Format", "Unknown")
 
     # Extract data center short name
     data_centers = umm.get("DataCenters", [])
@@ -414,105 +421,9 @@ def extract_collection_info(collection: Dict[str, Any]) -> Dict[str, Any]:
         if short_name not in data_center_names:
             data_center_names.append(short_name)
 
-    granule = fetch_granule_metadata(concept_id)
-    if granule:
-        print(f"Granule concept id is {granule["meta"]["concept-id"]}")
-        # get granule file format
-        granule_data_url = get_data_url(granule)
-        granule_format = extract_file_format_from_granule(granule)
-        if granule_format:
-            granule_file_formats = [granule_format]
-        else:
-            granule_file_formats = [os.path.splitext(granule_data_url)[1].lstrip('.')]
-
-        # TODO(low): how to handle cases where there are multiple file formats?
-        granule_file_format = granule_file_formats[0]
-
-        # if granule file format is supported, extract data variables, spatial and temporal extent
-        # also check that if collection file formats is populated, that file format is supported (e.g. HDF-EOS2 is not supported)
-        if (granule_data_url and is_supported_format(granule_file_format)) and (collection_file_formats == [] or is_supported_format(collection_file_formats[0])):
-            backend, data_variables = extract_data_variables(granule_data_url, granule_file_format, data_center_names[0])
-            granule_umm = granule.get("umm", {})
-            spatial_extent = parse_bounds_from_spatial(granule_umm)
-            temporal_extent = parse_temporal(granule_umm)
-
-    # Extract direct distribution information regions
-    regions = []
-    direct_dist_info = umm.get("DirectDistributionInformation")
-
-    if direct_dist_info:
-        if isinstance(direct_dist_info, dict):
-            region = direct_dist_info.get("Region", "Unknown")
-            regions.append(region)
-        elif isinstance(direct_dist_info, list):
-            for dist_info in direct_dist_info:
-                region = dist_info.get("Region", "Unknown")
-                if region not in regions:
-                    regions.append(region)
-
-    tiles_url = None
-    if backend and data_variables:
-        query = {
-            "concept_id": concept_id,
-            "temporal": temporal_extent,
-        }
-        shared_args = {
-            "tile_x": x,
-            "tile_y": y,
-            "tile_z": z,
-            "cmr_query": query,
-        }
-        reader_options = {}
-
-        if backend == "rasterio":
-            band = next((item for item in data_variables if item in known_bands), None)
-            if band:
-                tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={concept_id}&backend={backend}&bands={band}"
-                reader = Reader
-                shared_args["bands_regex"] = ".*"
-        elif backend == "xarray":
-            variable = next((item for item in data_variables if item in known_variables), None)
-            if variable:
-                tiles_url = f"{titiler_cmr_endpoint}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?concept_id={concept_id}&backend={backend}&variable={variable}&datetime={('/').join(temporal_extent)}"
-                reader = XarrayReader
-                reader_options = {
-                    "variable": variable,
-                    "opener": xarray_open_dataset
-                }                
-
-
-        if tiles_url:
-            print(f"Tiles URL: {tiles_url}")
-
-            try:
-                with CMRBackend(
-                    reader=reader,
-                    auth=auth,
-                    reader_options=reader_options,
-                ) as src_dst:
-                    image, _ = src_dst.tile(**shared_args)
-
-                    # TODO(low): add ability to render image with colormapping
-                    # png_bytes = image.render(img_format="png")
-                    # with open("output.png", "wb") as f: f.write(png_bytes); f.close()
-                print(f"Successfully created tile for file {granule_data_url}")
-            except Exception as e:
-                print(f"Error creating tile for file {granule_data_url}: {e}")
-                raise e        
-        else:
-            print("No tiles URL could be constructed")
-
-    return {
-        "concept_id": concept_id,
-        "collection_file_formats": collection_file_formats,
-        "granule_file_formats": granule_file_formats,
-        "granule_data_url": granule_data_url,
-        "data_variables": data_variables,
-        "spatial_extent": spatial_extent,
-        "temporal_extent": temporal_extent,
-        "data_centers": data_center_names,
-        "direct_distribution_regions": regions if regions else None
-    }
+    granule = fetch_random_granule_metadata(concept_id)
+    granule_tiling_info = extract_granule_tiling_info(granule, collection_file_format, data_centers)
+    return granule_tiling_info
 
 
 def main():
@@ -528,7 +439,9 @@ def main():
     # Handle granule-specific mode
     if args.granule_id:
         print(f"Generating tiles URL for granule ID: {args.granule_id}")
-        tiles_url = generate_tiles_url_for_granule(args.granule_id)
+        granule = fetch_granule_by_id(args.granule_id)
+        granule_tiling_info = extract_granule_tiling_info(granule)
+        tiles_url = granule_tiling_info.generate_tiles_url_for_granule()
         if tiles_url:
             print(f"\n✓ Success! Tiles URL generated:")
             print(f"{tiles_url}")
@@ -552,7 +465,7 @@ def main():
     print("=" * 80)
 
     for idx, collection in enumerate(collections, 1):
-        info = extract_collection_info(collection)
+        info = extract_random_granule_info(collection)
 
         print(f"\nCollection {idx}:")
         print(f"  Concept ID: {info['concept_id']}")
@@ -563,11 +476,6 @@ def main():
         print(f"  Temporal Extent: {info['temporal_extent'] if info['temporal_extent'] else 'None'}")
         print(f"  Data Centers: {', '.join(info['data_centers']) if info['data_centers'] else 'None'}")
         print(f"  Data URL: {info['granule_data_url'] if info['granule_data_url'] else 'None'}")
-
-        if info['direct_distribution_regions']:
-            print(f"  Direct Distribution Regions: {', '.join(info['direct_distribution_regions'])}")
-        else:
-            print(f"  Direct Distribution Regions: Not present in metadata")
 
         print("-" * 80)
 
