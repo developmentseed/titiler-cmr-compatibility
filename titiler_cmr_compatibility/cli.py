@@ -7,9 +7,11 @@ CMR collections and generating tiles URLs for granules.
 
 import argparse
 import logging
+from pathlib import Path
 from typing import Optional
 
 import earthaccess
+import pandas as pd
 
 from .api import fetch_cmr_collections, fetch_granule_by_id
 from .metadata import extract_random_granule_info, extract_granule_tiling_info
@@ -66,7 +68,9 @@ def process_granule_by_id(granule_id: str, auth: Optional[any] = None) -> None:
 def process_collections(
     page_size: int = 100,
     concept_id: Optional[str] = None,
-    auth: Optional[any] = None
+    auth: Optional[any] = None,
+    verbose: bool = False,
+    output_file: str = "tiling_results.parquet"
 ) -> None:
     """
     Process collections and extract random granule information.
@@ -75,6 +79,8 @@ def process_collections(
         page_size: Number of collections to retrieve
         concept_id: Optional specific collection concept ID
         auth: Optional earthaccess authentication object
+        verbose: Whether to print detailed output (default: False)
+        output_file: Path to the output parquet file (default: tiling_results.parquet)
     """
     if concept_id:
         print(f"Fetching specific collection {concept_id} from CMR in UMM JSON format...\n")
@@ -88,36 +94,66 @@ def process_collections(
         return
 
     print(f"Retrieved {len(collections)} collections\n")
-    print("=" * 80)
+    if verbose:
+        print("=" * 80)
 
     for idx, collection in enumerate(collections, 1):
         try:
             ginfo = extract_random_granule_info(collection)
 
-            print(f"Collection {idx}:")
-            if ginfo:
-                print(f"  Collection Concept ID: {ginfo.collection_concept_id}")
-                print(f"  Granule Concept ID: {ginfo.concept_id}")
-                print(f"  Backend: {ginfo.backend}")
-                print(f"  Format: {ginfo.format}")
-                print(f"  Extension: {ginfo.extension}")
-                print(f"  Data URL: {ginfo.data_url}")
-                if ginfo.data_variables:
-                    print(f"  Data Variables: {', '.join(ginfo.data_variables[:5])}")
-                    if len(ginfo.data_variables) > 5:
-                        print(f"    ... and {len(ginfo.data_variables) - 5} more")
-                if ginfo.tiles_url:
-                    print(f"  Tiles URL: {ginfo.tiles_url}")
-                    print("Testing tile generation:")
-                    print(ginfo.test_tiling(auth))
+            if verbose:
+                print(f"Collection {idx}:")
+                if ginfo:
+                    print(f"  Collection Concept ID: {ginfo.collection_concept_id}")
+                    print(f"  Granule Concept ID: {ginfo.concept_id}")
+                    print(f"  Backend: {ginfo.backend}")
+                    print(f"  Format: {ginfo.format}")
+                    print(f"  Extension: {ginfo.extension}")
+                    print(f"  Data URL: {ginfo.data_url}")
+                    if ginfo.data_variables:
+                        print(f"  Data Variables: {', '.join(ginfo.data_variables[:5])}")
+                        if len(ginfo.data_variables) > 5:
+                            print(f"    ... and {len(ginfo.data_variables) - 5} more")
+                    if ginfo.tiles_url:
+                        print(f"  Tiles URL: {ginfo.tiles_url}")
+                        print("Testing tile generation:")
+                        print(ginfo.test_tiling(auth))
+                else:
+                    print("  Failed to extract granule information")
+                print("-" * 80)
             else:
-                print("  Failed to extract granule information")
+                # Non-verbose mode: only print collection concept ID
+                if ginfo:
+                    print(f"Processing collection {ginfo.collection_concept_id}")
+                    # Test tiling but don't print verbose output
+                    if ginfo.tiles_url:
+                        ginfo.test_tiling(auth)
+                else:
+                    print(f"Processing collection {idx}: Failed to extract granule information")
 
-            print("-" * 80)
+            # Append tiling info to parquet file
+            if ginfo:
+                report_dict = ginfo.to_report_dict()
+                df = pd.DataFrame([report_dict])
+
+                # Append to parquet file
+                output_path = Path(output_file)
+                if output_path.exists():
+                    # Append to existing file
+                    existing_df = pd.read_parquet(output_path)
+                    combined_df = pd.concat([existing_df, df], ignore_index=True)
+                    combined_df.to_parquet(output_path, index=False)
+                else:
+                    # Create new file
+                    df.to_parquet(output_path, index=False)
+
         except Exception as e:
             logger.error(f"Error processing collection {idx}: {e}")
-            print(f"  Error: {e}")
-            print("-" * 80)
+            if verbose:
+                print(f"  Error: {e}")
+                print("-" * 80)
+            else:
+                print(f"Error processing collection {idx}: {e}")
 
 
 def main():
@@ -152,7 +188,13 @@ def main():
     parser.add_argument(
         '--verbose',
         action='store_true',
-        help='Enable verbose logging'
+        help='Enable verbose output and logging'
+    )
+    parser.add_argument(
+        '--output-file',
+        type=str,
+        default='tiling_results.parquet',
+        help='Path to output parquet file (default: tiling_results.parquet)'
     )
     args = parser.parse_args()
 
@@ -180,7 +222,9 @@ def main():
     process_collections(
         page_size=args.page_size,
         concept_id=args.collection,
-        auth=auth
+        auth=auth,
+        verbose=args.verbose,
+        output_file=args.output_file
     )
 
 
