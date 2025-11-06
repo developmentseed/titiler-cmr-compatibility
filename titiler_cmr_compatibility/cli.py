@@ -10,8 +10,10 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from multiprocessing import Pool, cpu_count
+from multiprocessing.pool import TimeoutError as PoolTimeoutError
 from functools import partial
 import math
+import signal
 
 import earthaccess
 import pandas as pd
@@ -34,35 +36,51 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
     This function is designed to be used with multiprocessing.Pool.
 
     Args:
-        collection: Collection metadata dictionary
+        auth: earthaccess authentication object
+        index_and_collection: Tuple of (index, collection_metadata)
+        verbose: Whether to print detailed output
 
     Returns:
         Dictionary with granule tiling info or None if processing failed
     """
     idx, collection = index_and_collection
     collection_concept_id = collection.get("meta", {}).get("concept-id", "")
-    print(f"Processing collection {idx} {collection_concept_id}")
-    ginfo = extract_random_granule_info(collection)
 
-    if verbose:
-        print(f"  Granule Concept ID: {ginfo.concept_id}")
-        print(f"  Backend: {ginfo.backend}")
-        print(f"  Format: {ginfo.format}")
-        print(f"  Extension: {ginfo.extension}")
-        print(f"  Data URL: {ginfo.data_url}")
-        if ginfo.data_variables:
-            print(f"  Data Variables: {', '.join(ginfo.data_variables[:5])}")
-            if len(ginfo.data_variables) > 5:
-                print(f"    ... and {len(ginfo.data_variables) - 5} more")
-        if ginfo.tiles_url:
-            print(f"  Tiles URL: {ginfo.tiles_url}")
-            print("Testing tile generation:")
-            print(ginfo.test_tiling(auth))
-        print("-" * 80)
-    else:
-        if ginfo.tiles_url:
-            ginfo.test_tiling(auth)
-    return ginfo.to_report_dict()
+    try:
+        logger.info(f"[Worker {idx}] Starting collection {collection_concept_id}")
+        print(f"Processing collection {idx}: {collection_concept_id}")
+
+        ginfo = extract_random_granule_info(collection)
+
+        if ginfo is None:
+            logger.warning(f"[Worker {idx}] No granule info returned for {collection_concept_id}")
+            return None
+
+        if verbose:
+            print(f"  Granule Concept ID: {ginfo.concept_id}")
+            print(f"  Backend: {ginfo.backend}")
+            print(f"  Format: {ginfo.format}")
+            print(f"  Extension: {ginfo.extension}")
+            print(f"  Data URL: {ginfo.data_url}")
+            if ginfo.data_variables:
+                print(f"  Data Variables: {', '.join(ginfo.data_variables[:5])}")
+                if len(ginfo.data_variables) > 5:
+                    print(f"    ... and {len(ginfo.data_variables) - 5} more")
+            if ginfo.tiles_url:
+                print(f"  Tiles URL: {ginfo.tiles_url}")
+                print("Testing tile generation:")
+                print(ginfo.test_tiling(auth))
+            print("-" * 80)
+        else:
+            if ginfo.tiles_url:
+                ginfo.test_tiling(auth)
+
+        logger.info(f"[Worker {idx}] Completed collection {collection_concept_id}")
+        return ginfo.to_report_dict()
+    except Exception as e:
+        logger.error(f"[Worker {idx}] Error processing collection {collection_concept_id}: {e}", exc_info=True)
+        print(f"ERROR in collection {idx} ({collection_concept_id}): {e}")
+        return None
 
 
 def process_granule_by_id(granule_id: str, auth: Optional[any] = None) -> None:
@@ -135,19 +153,19 @@ def process_collections_parallel(
     total_collections: Optional[int] = None,
     output_file: str = "tiling_results.parquet",
     num_workers: int = 4,
-    batch_size: int = 100
+    batch_size: int = 100,
+    timeout_per_collection: int = 180
 ) -> None:
     """
     Process collections in parallel using multiprocessing and batch operations.
 
     Args:
+        auth: earthaccess authentication object
         total_collections: Total number of collections to process (None for all)
-        concept_id: Optional specific collection concept ID
-        auth: Optional earthaccess authentication object
-        verbose: Whether to print detailed output (default: False)
         output_file: Path to the output parquet file (default: tiling_results.parquet)
         num_workers: Number of parallel worker processes (default: 4)
         batch_size: Number of collections to fetch and process per batch (default: 100)
+        timeout_per_collection: Maximum seconds to wait for each collection (default: 180)
     """
     print("Fetching collection count from CMR...\n")
     # First get total count
@@ -163,10 +181,12 @@ def process_collections_parallel(
     # Calculate number of batches
     num_batches = math.ceil(total_to_process / batch_size)
     print(f"Processing in {num_batches} batches of {batch_size} collections each")
-    print(f"Using {num_workers} parallel workers per batch\n")
+    print(f"Using {num_workers} parallel workers per batch")
+    print(f"Timeout per collection: {timeout_per_collection}s\n")
 
     total_processed = 0
     total_successful = 0
+    total_timeouts = 0
 
     # Process in batches
     for batch_num in range(1, num_batches + 1):
@@ -188,10 +208,34 @@ def process_collections_parallel(
 
         print(f"Retrieved {len(collections)} collections for this batch")
 
-        # Process collections in parallel
+        # Process collections in parallel with timeout
+        results = []
+        timeouts = []
+
         with Pool(processes=num_workers) as pool:
             try:
-                results = pool.map(partial(_process_single_collection, auth), enumerate(collections))
+                # Use imap_unordered for better control
+                worker_func = partial(_process_single_collection, auth)
+                async_results = [
+                    pool.apply_async(worker_func, (item,))
+                    for item in enumerate(collections)
+                ]
+
+                # Collect results with timeout
+                for i, async_result in enumerate(async_results):
+                    try:
+                        result = async_result.get(timeout=timeout_per_collection)
+                        results.append(result)
+                    except PoolTimeoutError:
+                        collection_id = collections[i].get("meta", {}).get("concept-id", "Unknown")
+                        logger.error(f"Collection {i} ({collection_id}) timed out after {timeout_per_collection}s")
+                        print(f"⚠ TIMEOUT: Collection {i} ({collection_id}) exceeded {timeout_per_collection}s")
+                        timeouts.append(collection_id)
+                        results.append(None)
+                    except Exception as e:
+                        collection_id = collections[i].get("meta", {}).get("concept-id", "Unknown")
+                        logger.error(f"Error getting result for collection {i} ({collection_id}): {e}")
+                        results.append(None)
             finally:
                 pool.close()
                 pool.join()
@@ -201,8 +245,11 @@ def process_collections_parallel(
 
         total_processed += len(collections)
         total_successful += len(successful_results)
+        total_timeouts += len(timeouts)
 
-        print(f"Processed {len(collections)} collections: {len(successful_results)} successful, {len(collections) - len(successful_results)} failed")
+        print(f"Processed {len(collections)} collections: {len(successful_results)} successful, "
+              f"{len(timeouts)} timed out, "
+              f"{len(collections) - len(successful_results) - len(timeouts)} failed")
 
         # Append batch results to parquet file
         if successful_results:
@@ -214,7 +261,8 @@ def process_collections_parallel(
                 print(f"Error saving batch results: {e}")
 
         # Print progress
-        print(f"\nProgress: {total_processed}/{total_to_process} collections processed ({total_successful} successful)")
+        print(f"\nProgress: {total_processed}/{total_to_process} collections processed "
+              f"({total_successful} successful, {total_timeouts} timed out)")
 
         # Check if we've processed enough
         if total_processed >= total_to_process:
@@ -224,6 +272,7 @@ def process_collections_parallel(
     print(f"Processing complete!")
     print(f"Total processed: {total_processed}")
     print(f"Total successful: {total_successful}")
+    print(f"Total timed out: {total_timeouts}")
     print(f"Results saved to: {output_file}")
     print(f"{'='*80}")
 
@@ -340,6 +389,12 @@ def main():
         default=100,
         help='Number of collections to process per batch (default: 100). Use with --parallel.'
     )
+    parser.add_argument(
+        '--timeout',
+        type=int,
+        default=180,
+        help='Timeout in seconds for processing each collection (default: 180). Use with --parallel.'
+    )
     args = parser.parse_args()
 
     # Configure logging level
@@ -366,11 +421,12 @@ def main():
     if args.parallel:
         # Use parallel processing mode
         process_collections_parallel(
-            total_collections=args.total_collections,
             auth=auth,
+            total_collections=args.total_collections,
             output_file=args.output_file,
             num_workers=args.num_workers,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            timeout_per_collection=args.timeout
         )
     else:
         # Use sequential processing mode
