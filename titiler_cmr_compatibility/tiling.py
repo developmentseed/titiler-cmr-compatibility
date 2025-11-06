@@ -112,10 +112,12 @@ class GranuleTilingInfo:
         if self.backend == "rasterio":
             band = next(
                 (item for item in self.data_variables if item in known_bands),
-                self.data_variables[0]
+                None
             )
             if band:
                 return f"{base_url}&bands={band}"
+            elif isinstance(self.data_variables, list):
+                return f"{base_url}&bands={self.data_variables[0]}"
             else:
                 logger.warning(
                     f"No known band found for rasterio backend in granule {self.concept_id}"
@@ -125,11 +127,14 @@ class GranuleTilingInfo:
         elif self.backend == "xarray":
             variable = next(
                 (item for item in self.data_variables if item in known_variables),
-                self.data_variables[0]
+                None
             )
-            if variable and self.temporal_extent:
+            if self.temporal_extent:
                 datetime_param = '/'.join(self.temporal_extent)
-                return f"{base_url}&variable={variable}&datetime={datetime_param}"
+                if variable:
+                    return f"{base_url}&variable={variable}&datetime={datetime_param}"
+                elif isinstance(self.data_variables, list):
+                    return f"{base_url}&variable={self.data_variables[0]}&datetime={datetime_param}"
             else:
                 if not variable:
                     logger.warning(
@@ -206,6 +211,7 @@ class GranuleTilingInfo:
         return {
             "collection_concept_id": self.collection_concept_id,
             "concept_id": self.concept_id,
+            "data_url": self.data_url,
             "backend": self.backend,
             "format": self.format,
             "extension": self.extension,
