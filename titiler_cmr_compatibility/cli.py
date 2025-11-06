@@ -45,17 +45,21 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
     """
     idx, collection = index_and_collection
     collection_concept_id = collection.get("meta", {}).get("concept-id", "")
+    ginfo = None
 
     try:
         logger.info(f"[Worker {idx}] Starting collection {collection_concept_id}")
         print(f"Processing collection {idx}: {collection_concept_id}")
-
         ginfo = extract_random_granule_info(collection)
+    except Exception as e:
+        logger.error(f"[Worker {idx}] Error processing collection {collection_concept_id}: {e}", exc_info=True)
+        print(f"ERROR in collection {idx} ({collection_concept_id}): {e}")
+        return None
+    if ginfo is None:
+        logger.warning(f"[Worker {idx}] No granule info returned for {collection_concept_id}")
+        return None
 
-        if ginfo is None:
-            logger.warning(f"[Worker {idx}] No granule info returned for {collection_concept_id}")
-            return None
-
+    try:
         if verbose:
             print(f"  Granule Concept ID: {ginfo.concept_id}")
             print(f"  Backend: {ginfo.backend}")
@@ -74,13 +78,11 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
         else:
             if ginfo.tiles_url:
                 ginfo.test_tiling(auth)
-
-        logger.info(f"[Worker {idx}] Completed collection {collection_concept_id}")
-        return ginfo.to_report_dict()
+        logger.info(f"[Worker {idx}] Completed collection {collection_concept_id} using granule {ginfo.concept_id}.")
     except Exception as e:
-        logger.error(f"[Worker {idx}] Error processing collection {collection_concept_id}: {e}", exc_info=True)
-        print(f"ERROR in collection {idx} ({collection_concept_id}): {e}")
-        return None
+        logger.error(f"[Worker {idx}] Error processing granule {ginfo.concept_id}: {e}", exc_info=True)
+        ginfo.error_message = str(e)
+    return ginfo.to_report_dict()
 
 
 def process_granule_by_id(granule_id: str, auth: Optional[any] = None) -> None:
