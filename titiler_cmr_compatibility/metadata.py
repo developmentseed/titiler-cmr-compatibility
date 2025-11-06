@@ -113,8 +113,8 @@ def extract_data_variables(
             data_variables = src.descriptions
         return "rasterio", data_variables
     else:
-        ds = open_xarray_dataset(data_url, data_center_name)
-        data_variables = list(ds.data_vars.keys())
+        with open_xarray_dataset(data_url, data_center_name) as ds:
+            data_variables = list(ds.data_vars.keys())
         return "xarray", data_variables
 
 

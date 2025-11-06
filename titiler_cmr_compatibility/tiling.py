@@ -188,6 +188,7 @@ class GranuleTilingInfo:
             return True
         except Exception as e:
             error_message = f"Error testing tile generation for granule {self.concept_id}: {e}"
+            raise e
             logger.error(error_message)
 
             self.tiling_compatible = False

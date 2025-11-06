@@ -27,7 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _process_single_collection(auth: earthaccess.Auth, collection: Dict[str, Any], verbose: bool = False) -> Optional[Dict[str, Any]]:
+def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [int, Dict[str, Any]], verbose: bool = False) -> Optional[Dict[str, Any]]:
     """
     Worker function to process a single collection.
 
@@ -39,37 +39,30 @@ def _process_single_collection(auth: earthaccess.Auth, collection: Dict[str, Any
     Returns:
         Dictionary with granule tiling info or None if processing failed
     """
-    collection_concept_id = collection.get("umm", {}).get("concept-id", "")
-    print(f"Processing collection {collection_concept_id}")
+    idx, collection = index_and_collection
+    collection_concept_id = collection.get("meta", {}).get("concept-id", "")
+    print(f"Processing collection {idx} {collection_concept_id}")
     ginfo = extract_random_granule_info(collection)
 
     if verbose:
-        if ginfo:
-            print(f"  Granule Concept ID: {ginfo.concept_id}")
-            print(f"  Backend: {ginfo.backend}")
-            print(f"  Format: {ginfo.format}")
-            print(f"  Extension: {ginfo.extension}")
-            print(f"  Data URL: {ginfo.data_url}")
-            if ginfo.data_variables:
-                print(f"  Data Variables: {', '.join(ginfo.data_variables[:5])}")
-                if len(ginfo.data_variables) > 5:
-                    print(f"    ... and {len(ginfo.data_variables) - 5} more")
-            if ginfo.tiles_url:
-                print(f"  Tiles URL: {ginfo.tiles_url}")
-                print("Testing tile generation:")
-                print(ginfo.test_tiling(auth))
-        else:
-            print(f"  Failed to extract granule information from collection {collection_concept_id}")
+        print(f"  Granule Concept ID: {ginfo.concept_id}")
+        print(f"  Backend: {ginfo.backend}")
+        print(f"  Format: {ginfo.format}")
+        print(f"  Extension: {ginfo.extension}")
+        print(f"  Data URL: {ginfo.data_url}")
+        if ginfo.data_variables:
+            print(f"  Data Variables: {', '.join(ginfo.data_variables[:5])}")
+            if len(ginfo.data_variables) > 5:
+                print(f"    ... and {len(ginfo.data_variables) - 5} more")
+        if ginfo.tiles_url:
+            print(f"  Tiles URL: {ginfo.tiles_url}")
+            print("Testing tile generation:")
+            print(ginfo.test_tiling(auth))
         print("-" * 80)
     else:
-        # Non-verbose mode: only print collection concept ID
-        if ginfo:
-            # Test tiling but don't print verbose output
+        if ginfo.tiles_url:
             ginfo.test_tiling(auth)
-            if ginfo:
-                return ginfo.to_report_dict()
-        else:
-            print(f"Processing collection {collection_concept_id}: Failed to extract granule information") 
+    return ginfo.to_report_dict()
 
 
 def process_granule_by_id(granule_id: str, auth: Optional[any] = None) -> None:
@@ -197,7 +190,11 @@ def process_collections_parallel(
 
         # Process collections in parallel
         with Pool(processes=num_workers) as pool:
-            results = pool.map(partial(_process_single_collection, auth), collections)
+            try:
+                results = pool.map(partial(_process_single_collection, auth), enumerate(collections))
+            finally:
+                pool.close()
+                pool.join()
 
         # Filter out None results
         successful_results = [r for r in results if r is not None]
@@ -265,14 +262,14 @@ def process_collections(
 
     for idx, collection in enumerate(collections, 1):
         try:
-            report_dict = _process_single_collection(auth, collection, verbose)
+            report_dict = _process_single_collection(idx, auth, collection, verbose)
             # Append tiling info to parquet file
             if report_dict:
                 _append_batch_to_parquet([report_dict], output_file)
 
         except Exception as e:
             logger.error(f"Error processing collection {idx}: {e}")
-            # raise e
+            raise e
             if verbose:
                 print(f"  Error: {e}")
                 print("-" * 80)
