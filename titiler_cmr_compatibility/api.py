@@ -111,7 +111,6 @@ def fetch_random_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
         total_num_granules = response.json().get("hits")
 
         if not total_num_granules:
-            logger.warning(f"No granules found for collection {concept_id}")
             return None
 
         # CMR has a 1 million item pagination limit

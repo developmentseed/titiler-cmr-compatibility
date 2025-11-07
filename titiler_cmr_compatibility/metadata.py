@@ -359,13 +359,9 @@ def extract_random_granule_info(collection: Dict[str, Any]) -> Optional[GranuleT
     data_center_names = extract_data_centers(collection)
 
     # Fetch and process random granule
-    try:
-        granule = fetch_random_granule_metadata(concept_id)
-        if not granule:
-            logger.warning(f"No granule found for collection {concept_id}")
-            return None
-
-        return extract_granule_tiling_info(granule, collection_file_format, data_center_names)
-    except Exception as e:
-        logger.error(f"Error processing granule for collection {concept_id}: {e}")
+    granule = fetch_random_granule_metadata(concept_id)
+    if not granule:
+        logger.warning(f"No granule found for collection {concept_id}")
         return None
+
+    return extract_granule_tiling_info(granule, collection_file_format, data_center_names)

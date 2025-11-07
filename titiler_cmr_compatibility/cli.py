@@ -45,6 +45,12 @@ def _print_verbose_granule_test(ginfo: GranuleTilingInfo, auth: earthaccess.Auth
     print("-" * 80)
     return ginfo
 
+def _minimal_ginfo(collection_id, error_message):
+    return GranuleTilingInfo(
+        collection_concept_id=collection_id,
+        error_message=error_message,
+    )
+
 def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [int, Dict[str, Any]], verbose: bool = False) -> Optional[Dict[str, Any]]:
     """
     Worker function to process a single collection.
@@ -65,15 +71,14 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
 
     try:
         logger.info(f"[Worker {idx}] Starting collection {collection_concept_id}")
-        print(f"Processing collection {idx}: {collection_concept_id}")
         ginfo = extract_random_granule_info(collection)
     except Exception as e:
         logger.error(f"[Worker {idx}] Error processing collection {collection_concept_id}: {e}", exc_info=True)
-        print(f"ERROR in collection {idx} ({collection_concept_id}): {e}")
-        return None
+        ginfo = _minimal_ginfo(collection_concept_id, str(e))
     if ginfo is None:
-        logger.warning(f"[Worker {idx}] No granule info returned for {collection_concept_id}")
-        return None
+        error_message = f"[Worker {idx}] No granule info returned for {collection_concept_id}"
+        logger.warning(error_message)
+        ginfo = _minimal_ginfo(collection_concept_id, error_message)
 
     try:
         if verbose:
@@ -83,8 +88,7 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
                 ginfo.test_tiling(auth)
         logger.info(f"[Worker {idx}] Completed collection {collection_concept_id} using granule {ginfo.concept_id}.")
     except Exception as e:
-        logger.error(f"[Worker {idx}] Error processing granule {ginfo.concept_id}: {e}", exc_info=True)
-        ginfo.error_message = str(e)
+        logger.error(f"[Worker {idx}] Error processing collection {collection_concept_id}: {e}", exc_info=True)
     return ginfo.to_report_dict()
 
 
@@ -201,12 +205,6 @@ def process_collections_parallel(
         results = []
         timeouts = []
 
-        def _minimal_ginfo(collection_id, error_message):
-            return GranuleTilingInfo(
-                collection_concept_id=collection_id,
-                error_message=error_message,
-            ).to_report_dict()
-
         with Pool(processes=num_workers) as pool:
             try:
                 # Use imap_unordered for better control
@@ -226,11 +224,11 @@ def process_collections_parallel(
                         error_message = f"Collection {i} ({collection_id}) timed out after {timeout_per_collection}s"
                         logger.error(error_message)
                         timeouts.append(collection_id)
-                        results.append(_minimal_ginfo(collection_id, error_message))
+                        results.append(_minimal_ginfo(collection_id, error_message).to_report_dict())
                     except Exception as e:
                         error_message = f"Error getting result for collection {i} ({collection_id}): {e}"
                         logger.error(error_message)
-                        results.append(_minimal_ginfo(collection_id, error_message))
+                        results.append(_minimal_ginfo(collection_id, error_message).to_report_dict())
             finally:
                 pool.close()
                 pool.join()
@@ -286,7 +284,6 @@ def process_collections(
         concept_id: Optional specific collection concept ID
         auth: Optional earthaccess authentication object
         verbose: Whether to print detailed output (default: False)
-        output_file: Path to the output parquet file (default: tiling_results.parquet)
     """
     if concept_id:
         print(f"Fetching specific collection {concept_id} from CMR in UMM JSON format...\n")
@@ -306,10 +303,6 @@ def process_collections(
     for idx, collection in enumerate(collections, 1):
         try:
             report_dict = _process_single_collection(auth, [idx, collection], verbose)
-            # Append tiling info to parquet file
-            if report_dict:
-                _append_batch_to_parquet([report_dict], output_file)
-
         except Exception as e:
             logger.error(f"Error processing collection {idx}: {e}")
             if verbose:

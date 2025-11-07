@@ -44,7 +44,7 @@ class GranuleTilingInfo:
     """
 
     collection_concept_id: str
-    concept_id: Optional[str]
+    concept_id: Optional[str] = None
     data_centers: Optional[List[str]] = None
     temporal_extent: Optional[Tuple[str, str]] = None
     data_variables: Optional[List[str]] = None
@@ -74,12 +74,14 @@ class GranuleTilingInfo:
         elif self.backend == "xarray":
             self.reader = XarrayReader
             # Find first known variable for xarray backend
-            self.variable = next(
+            variable = next(
                 (item for item in (self.data_variables or []) if item in known_variables),
                 None
-            ) or self.data_variables[0]
+            )
+            if not variable and len(self.data_variables) > 0:
+                variable = self.data_variables[0]
             self.reader_options = {
-                "variable": self.variable,
+                "variable": variable,
                 "opener": xarray_open_dataset
             }
 
@@ -115,7 +117,7 @@ class GranuleTilingInfo:
             )
             if band:
                 return f"{base_url}&bands={band}"
-            elif isinstance(self.data_variables, list):
+            elif len(self.data_variables) > 0:
                 return f"{base_url}&bands={self.data_variables[0]}"
             else:
                 logger.warning(
