@@ -209,15 +209,9 @@ def _create_supported_granule_info(
             data_center_name
         )
     except Exception as e:
-        error_message = f"Error opening file {granule_data_url}: {e}"
+        error_message = f"Error opening or extracting variables {granule_data_url}: {e}"
         logger.error(error_message)
         incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
-        return None, None
-
-    if not backend or not data_variables:
-        error_message = f"Could not extract data variables for granule {granule_umm.get('GranuleUR')}"
-        incompatible_reason = IncompatibilityReason.CANT_EXTRACT_VARIABLES
-        logger.error(error_message)
 
     temporal_extent = parse_temporal(granule_umm)
 
