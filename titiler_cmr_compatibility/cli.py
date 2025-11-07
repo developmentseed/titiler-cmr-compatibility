@@ -20,6 +20,7 @@ import pandas as pd
 
 from .api import fetch_cmr_collections, fetch_granule_by_id
 from .metadata import extract_random_granule_info, extract_granule_tiling_info
+from .tiling import GranuleTilingInfo
 
 # Configure logging
 logging.basicConfig(
@@ -201,7 +202,6 @@ def process_collections_parallel(
             collections, _ = fetch_cmr_collections(page_size=batch_size, page_num=batch_num)
         except Exception as e:
             logger.error(f"Error fetching batch {batch_num}: {e}")
-            print(f"Error fetching batch {batch_num}: {e}")
             continue
 
         if not collections:
@@ -214,6 +214,12 @@ def process_collections_parallel(
         results = []
         timeouts = []
 
+        def _minimal_ginfo(collection_id, error_message):
+            return GranuleTilingInfo(
+                collection_concept_id=collection_id,
+                error_message=error_message,
+            ).to_report_dict()
+
         with Pool(processes=num_workers) as pool:
             try:
                 # Use imap_unordered for better control
@@ -225,19 +231,19 @@ def process_collections_parallel(
 
                 # Collect results with timeout
                 for i, async_result in enumerate(async_results):
+                    collection_id = collections[i].get("meta", {}).get("concept-id", "Unknown")
                     try:
                         result = async_result.get(timeout=timeout_per_collection)
                         results.append(result)
                     except PoolTimeoutError:
-                        collection_id = collections[i].get("meta", {}).get("concept-id", "Unknown")
-                        logger.error(f"Collection {i} ({collection_id}) timed out after {timeout_per_collection}s")
-                        print(f"⚠ TIMEOUT: Collection {i} ({collection_id}) exceeded {timeout_per_collection}s")
+                        error_message = f"Collection {i} ({collection_id}) timed out after {timeout_per_collection}s"
+                        logger.error(error_message)
                         timeouts.append(collection_id)
-                        results.append(None)
+                        results.append(_minimal_ginfo(collection_id, error_message))
                     except Exception as e:
-                        collection_id = collections[i].get("meta", {}).get("concept-id", "Unknown")
-                        logger.error(f"Error getting result for collection {i} ({collection_id}): {e}")
-                        results.append(None)
+                        error_message = f"Error getting result for collection {i} ({collection_id}): {e}"
+                        logger.error(error_message)
+                        results.append(_minimal_ginfo(collection_id, error_message))
             finally:
                 pool.close()
                 pool.join()
@@ -260,7 +266,6 @@ def process_collections_parallel(
                 print(f"Appended {len(successful_results)} results to {output_file}")
             except Exception as e:
                 logger.error(f"Error appending batch {batch_num} to parquet: {e}")
-                print(f"Error saving batch results: {e}")
 
         # Print progress
         print(f"\nProgress: {total_processed}/{total_to_process} collections processed "
@@ -320,12 +325,12 @@ def process_collections(
 
         except Exception as e:
             logger.error(f"Error processing collection {idx}: {e}")
-            raise e
             if verbose:
                 print(f"  Error: {e}")
                 print("-" * 80)
             else:
                 print(f"Error processing collection {idx}: {e}")
+                raise e
 
 
 def main():

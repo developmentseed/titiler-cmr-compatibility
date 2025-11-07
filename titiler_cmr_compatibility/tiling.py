@@ -45,7 +45,7 @@ class GranuleTilingInfo:
     """
 
     collection_concept_id: str
-    concept_id: str
+    concept_id: Optional[str]
     data_centers: Optional[List[str]] = None
     temporal_extent: Optional[Tuple[str, str]] = None
     data_variables: Optional[List[str]] = None
