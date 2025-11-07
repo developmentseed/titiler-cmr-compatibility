@@ -32,7 +32,6 @@ class IncompatibilityReason(str, Enum):
     """Reasons why tiling might not be compatible with a granule."""
     UNSUPPORTED_FORMAT = "unsupported_format"
     CANT_OPEN_FILE = "cant_open_file"
-    CANT_EXTRACT_VARIABLES = "cant_extract_variables"
     TILE_GENERATION_FAILED = "tile_generation_failed"
 
 @dataclass
@@ -78,7 +77,7 @@ class GranuleTilingInfo:
             self.variable = next(
                 (item for item in (self.data_variables or []) if item in known_variables),
                 None
-            )
+            ) or self.data_variables[0]
             self.reader_options = {
                 "variable": self.variable,
                 "opener": xarray_open_dataset

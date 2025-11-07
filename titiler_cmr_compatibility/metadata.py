@@ -111,6 +111,7 @@ def extract_data_variables(
     data_variables = []
     if file_format in COG_FORMATS or file_format in COG_EXTENSIONS:
         with open_rasterio_dataset(data_url, data_center_name) as src:
+            # TODO: Sometimes src.descriptions is `None`
             data_variables = src.descriptions
         return "rasterio", data_variables
     else:
@@ -212,12 +213,8 @@ def _create_supported_granule_info(
     except Exception as e:
         error_message = f"Error opening file {granule_data_url}: {e}"
         logger.error(error_message)
+        # TODO: If file is forbidden, should we try the external URL?
         incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
-
-    if not backend or not data_variables:
-        error_message = f"Could not extract data variables for granule {granule_meta.get('concept-id')}"
-        incompatible_reason = IncompatibilityReason.CANT_EXTRACT_VARIABLES
-        logger.error(error_message)
 
     temporal_extent = parse_temporal(granule_umm)
 
