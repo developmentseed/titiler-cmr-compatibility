@@ -55,7 +55,9 @@ daac_map = {
     "NASA/GSFC/SED/ESD/GCDC/OB.DAAC": "OBDAAC",
     "SEDAC": "SEDAC",
     "NASA/GSFC/SED/ESD/HBSL/BISB/LAADS": "LAADS",
-    "NASA/LARC/SD/ASDC": "ASDC"
+    "NASA/LARC/SD/ASDC": "ASDC",
+    "POCLOUD": "POCLOUD",
+    "NSIDC_CPRD": "NSIDC",
 }
 
 @with_timeout(seconds=120)
@@ -82,7 +84,10 @@ def open_xarray_dataset(url, data_center_name):
             fs = earthaccess.get_fsspec_https_session()
             return xr.open_dataset(fs.open(url), engine="h5netcdf", decode_times=False)
         elif scheme == "s3":
-            s3 = earthaccess.get_s3fs_session(daac=daac_map[data_center_name])
+            daac_name = data_center_name if data_center_name in daac_map.values() else daac_map.get(data_center_name, None)
+            if not daac_name:
+                raise ValueError(f"Unknown DAAC: {data_center_name}")
+            s3 = earthaccess.get_s3fs_session(daac=daac_name)
             return xr.open_dataset(s3.open(url, "rb"), engine="h5netcdf", decode_times=False)
         else:
             raise ValueError(f"Unsupported URL scheme: {scheme}")
@@ -117,8 +122,10 @@ def open_rasterio_dataset(url, data_center_name):
             fs = earthaccess.get_fsspec_https_session()
             return rasterio.open(fs.open(url))
         elif scheme == "s3":
-            daac = data_center_name if data_center_name in daac_map.values() else daac_map[data_center_name]
-            s3 = earthaccess.get_s3fs_session(daac=daac)
+            daac_name = data_center_name if data_center_name in daac_map.values() else daac_map.get(data_center_name, None)
+            if not daac_name:
+                raise ValueError(f"Unknown DAAC: {data_center_name}")
+            s3 = earthaccess.get_s3fs_session(daac=daac_name)
             return rasterio.open(s3.open(url, "rb"))
         else:
             raise ValueError(f"Unsupported URL scheme: {scheme}")

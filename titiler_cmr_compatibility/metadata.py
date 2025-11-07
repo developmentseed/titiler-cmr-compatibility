@@ -73,8 +73,8 @@ def get_data_url(granule: Dict[str, Any]) -> Optional[str]:
 
     for url_info in related_urls:
         url_type = url_info.get("Type")
-        # TODO(medium): prefer GET DATA VIA DIRECT ACCESS if available
-        if url_type in ["GET DATA"]:  # , "GET DATA VIA DIRECT ACCESS"]:
+        # TODO(medium): prefer S3 URLs / GET DATA VIA DIRECT ACCESS if available
+        if url_type in ["GET DATA", "GET DATA VIA DIRECT ACCESS"]:
             data_urls.append(url_info)
 
     url = None
@@ -83,9 +83,10 @@ def get_data_url(granule: Dict[str, Any]) -> Optional[str]:
     elif len(data_urls) > 1:
         for url_info in data_urls:
             subtype = url_info.get("Subtype")
-            # None is for cases where the subtype is not present, we just take the first one
-            if subtype in ["DIRECT DOWNLOAD", "VIRTUAL COLLECTION", None]:
-                url = url_info.get("URL")
+            url = url_info.get("URL")
+            if subtype in ["DIRECT DOWNLOAD", "VIRTUAL COLLECTION"]:
+                break
+            elif url.startswith('s3://'):
                 break
 
     return url if url else None
@@ -110,6 +111,7 @@ def extract_data_variables(
     data_variables = []
     if file_format in COG_FORMATS or file_format in COG_EXTENSIONS:
         with open_rasterio_dataset(data_url, data_center_name) as src:
+            # TODO: Sometimes src.descriptions is `None`
             data_variables = src.descriptions
         return "rasterio", data_variables
     else:
@@ -162,10 +164,10 @@ def _create_unsupported_granule_info(
     Returns:
         GranuleTilingInfo with limited information
     """
-    granule_umm = granule.get("umm", {})
+    granule_meta = granule.get("meta", {})
     return GranuleTilingInfo(
         collection_concept_id=collection_concept_id,
-        concept_id=granule_umm.get("GranuleUR", "Unknown"),
+        concept_id=granule_meta.get("concept-id", None),
         data_url=granule_data_url,
         format=granule_format,
         extension=granule_extension,
@@ -201,7 +203,7 @@ def _create_supported_granule_info(
     data_center_name = granule_meta.get("provider-id")
 
     # Extract data variables
-    error_message, incompatible_reason = None, None
+    error_message, incompatible_reason, backend, data_variables = None, None, None, None
     try:
         backend, data_variables = extract_data_variables(
             granule_data_url,
@@ -211,13 +213,14 @@ def _create_supported_granule_info(
     except Exception as e:
         error_message = f"Error opening or extracting variables {granule_data_url}: {e}"
         logger.error(error_message)
+        # TODO: If file is forbidden, should we try the external URL?
         incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
 
     temporal_extent = parse_temporal(granule_umm)
 
     return GranuleTilingInfo(
         collection_concept_id=collection_concept_id,
-        concept_id=granule_umm.get("GranuleUR", "Unknown"),
+        concept_id=granule_meta.get("concept-id", None),
         data_centers=data_centers,
         temporal_extent=temporal_extent,
         data_variables=data_variables,

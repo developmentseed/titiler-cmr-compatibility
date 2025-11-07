@@ -9,11 +9,10 @@ import argparse
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 from multiprocessing.pool import TimeoutError as PoolTimeoutError
 from functools import partial
 import math
-import signal
 
 import earthaccess
 import pandas as pd
@@ -29,6 +28,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def _print_verbose_granule_test(ginfo: GranuleTilingInfo, auth: earthaccess.Auth):
+    print(f"  Granule Concept ID: {ginfo.concept_id}")
+    print(f"  Backend: {ginfo.backend}")
+    print(f"  Format: {ginfo.format}")
+    print(f"  Extension: {ginfo.extension}")
+    print(f"  Data URL: {ginfo.data_url}")
+    if type(ginfo.data_variables) == list:
+        print(f"  Data Variables: {', '.join(ginfo.data_variables)}")
+    if ginfo.tiles_url:
+        print(f"  Tiles URL: {ginfo.tiles_url}")
+        print("Testing tile generation:")
+        print(ginfo.test_tiling(auth))
+    if ginfo.error_message:
+        print(f"Error message: {ginfo.error_message}")
+    print("-" * 80)
+    return ginfo
 
 def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [int, Dict[str, Any]], verbose: bool = False) -> Optional[Dict[str, Any]]:
     """
@@ -62,20 +77,7 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
 
     try:
         if verbose:
-            print(f"  Granule Concept ID: {ginfo.concept_id}")
-            print(f"  Backend: {ginfo.backend}")
-            print(f"  Format: {ginfo.format}")
-            print(f"  Extension: {ginfo.extension}")
-            print(f"  Data URL: {ginfo.data_url}")
-            if ginfo.data_variables:
-                print(f"  Data Variables: {', '.join(ginfo.data_variables[:5])}")
-                if len(ginfo.data_variables) > 5:
-                    print(f"    ... and {len(ginfo.data_variables) - 5} more")
-            if ginfo.tiles_url:
-                print(f"  Tiles URL: {ginfo.tiles_url}")
-                print("Testing tile generation:")
-                print(ginfo.test_tiling(auth))
-            print("-" * 80)
+            ginfo = _print_verbose_granule_test(ginfo, auth)
         else:
             if ginfo.tiles_url:
                 ginfo.test_tiling(auth)
@@ -95,7 +97,6 @@ def process_granule_by_id(granule_id: str, auth: Optional[any] = None) -> None:
         auth: Optional earthaccess authentication object
     """
     print(f"Generating tiles URL for granule ID: {granule_id}")
-
     try:
         granule = fetch_granule_by_id(granule_id)
         if not granule:
@@ -107,21 +108,7 @@ def process_granule_by_id(granule_id: str, auth: Optional[any] = None) -> None:
             print(f"\n✗ Failed to extract tiling info for granule {granule_id}")
             return
 
-        tiles_url = granule_tiling_info.generate_tiles_url_for_granule()
-        if tiles_url:
-            print(f"\n✓ Success! Tiles URL generated:")
-            print(f"{tiles_url}")
-
-            # Optionally test tiling if auth is available
-            if auth and granule_tiling_info.backend:
-                print("\nTesting tile generation...")
-                try:
-                    granule_tiling_info.test_tiling(auth)
-                    print("✓ Tile generation test passed")
-                except Exception as e:
-                    print(f"✗ Tile generation test failed: {e}")
-        else:
-            print(f"\n✗ Failed to generate tiles URL for granule {granule_id}")
+        _print_verbose_granule_test(granule_tiling_info, auth)
     except Exception as e:
         logger.error(f"Error processing granule {granule_id}: {e}")
         print(f"\n✗ Error: {e}")
@@ -318,7 +305,7 @@ def process_collections(
 
     for idx, collection in enumerate(collections, 1):
         try:
-            report_dict = _process_single_collection(idx, auth, collection, verbose)
+            report_dict = _process_single_collection(auth, [idx, collection], verbose)
             # Append tiling info to parquet file
             if report_dict:
                 _append_batch_to_parquet([report_dict], output_file)
