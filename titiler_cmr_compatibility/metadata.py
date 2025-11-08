@@ -211,10 +211,15 @@ def _create_supported_granule_info(
             data_center_name
         )
     except Exception as e:
-        error_message = f"Error opening or extracting variables {granule_data_url}: {e}"
+        error_message = f"Error opening {granule_data_url}: {e}"
         logger.error(error_message)
         # TODO: If file is forbidden, should we try the external URL?
         incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
+
+    if not data_variables:
+        error_message = f"Can't extract variables"
+        logger.error(error_message)
+        incompatible_reason = IncompatibilityReason.CANT_EXTRACT_VARIABLES
 
     temporal_extent = parse_temporal(granule_umm)
 

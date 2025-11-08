@@ -35,6 +35,8 @@ class IncompatibilityReason(str, Enum):
     TILE_GENERATION_FAILED = "tile_generation_failed"
     NO_GRANULE_FOUND = "no_granule_found"
     FAILED_TO_EXTRACT = "failed_to_extract"
+    TIMEOUT = "timeout"
+    CANT_EXTRACT_VARIABLES = "cant_extract_variables"
 
 @dataclass
 class GranuleTilingInfo:
@@ -68,7 +70,8 @@ class GranuleTilingInfo:
 
     def __post_init__(self):
         """Initialize computed fields based on backend and data variables."""
-        self.tiles_url = self.generate_tiles_url_for_granule()
+        if self.backend and self.data_variables:
+            self.tiles_url = self.generate_tiles_url_for_granule()
 
         if self.backend == "rasterio":
             self.reader = Reader
@@ -105,7 +108,7 @@ class GranuleTilingInfo:
             Tiles URL string or None if unable to generate
         """
         if not self.backend or not self.data_variables:
-            return None
+            raise ValueError("Cannot generate tiles URL without backend and data variables")
 
         base_url = (
             f"{TITILER_CMR_ENDPOINT}/tiles/WebMercatorQuad/{tile_z}/{tile_x}/{tile_y}.png"

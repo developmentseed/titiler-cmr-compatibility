@@ -40,15 +40,18 @@ def _print_verbose_granule_test(ginfo: GranuleTilingInfo, auth: earthaccess.Auth
         print(f"  Tiles URL: {ginfo.tiles_url}")
         print("Testing tile generation:")
         print(ginfo.test_tiling(auth))
+    if ginfo.incompatible_reason:
+        print(f"  Incompatible reason: {ginfo.incompatible_reason}")
     if ginfo.error_message:
         print(f"Error message: {ginfo.error_message}")
     print("-" * 80)
     return ginfo
 
-def _minimal_ginfo(collection_id, error_message):
+def _minimal_ginfo(collection_id: str, error_message: str, incompatible_reason: Optional[IncompatibilityReason] = None):
     return GranuleTilingInfo(
         collection_concept_id=collection_id,
         error_message=error_message,
+        incompatible_reason=incompatible_reason
     )
 
 def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [int, Dict[str, Any]], verbose: bool = False) -> Optional[Dict[str, Any]]:
@@ -70,7 +73,7 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
     ginfo = None
 
     try:
-        logger.info(f"[Worker {idx}] Starting collection {collection_concept_id}")
+        logger.info(f"[Worker {idx}] Starting collection {idx}: {collection_concept_id}")
         ginfo = extract_random_granule_info(collection)
     except Exception as e:
         logger.error(f"[Worker {idx}] Error extracting granule info {collection_concept_id}: {e}", exc_info=True)
@@ -90,7 +93,7 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
         logger.info(f"[Worker {idx}] Completed collection {collection_concept_id} using granule {ginfo.concept_id}.")
     except Exception as e:
         logger.error(f"[Worker {idx}] Error processing collection {collection_concept_id}: {e}", exc_info=True)
-        return _minimal_ginfo(collection_concept_id, error_message, IncompatibilityReason.TILE_GENERATION_FAILED).to_report_dict()
+        return _minimal_ginfo(collection_concept_id, str(e), IncompatibilityReason.TILE_GENERATION_FAILED).to_report_dict()
     return ginfo.to_report_dict()
 
 
@@ -226,13 +229,13 @@ def process_collections_parallel(
                         error_message = f"Collection {i} ({collection_id}) timed out after {timeout_per_collection}s"
                         logger.error(error_message)
                         timeouts.append(collection_id)
-                        results.append(_minimal_ginfo(collection_id, error_message).to_report_dict())
+                        results.append(_minimal_ginfo(collection_id, error_message, IncompatibilityReason.TIMEOUT).to_report_dict())
                     except Exception as e:
                         error_message = f"Error getting result for collection {i} ({collection_id}): {e}"
                         logger.error(error_message)
                         results.append(_minimal_ginfo(collection_id, error_message).to_report_dict())
             finally:
-                pool.close()
+                pool.terminate()
                 pool.join()
 
         # Filter out None results
@@ -375,14 +378,14 @@ def main():
     parser.add_argument(
         '--batch-size',
         type=int,
-        default=100,
+        default=25,
         help='Number of collections to process per batch (default: 100). Use with --parallel.'
     )
     parser.add_argument(
         '--timeout',
         type=int,
-        default=180,
-        help='Timeout in seconds for processing each collection (default: 180). Use with --parallel.'
+        default=30,
+        help='Timeout in seconds for processing each collection (default: 30). Use with --parallel.'
     )
     args = parser.parse_args()
 
