@@ -12,3 +12,8 @@ Running the tests:
 ```bash
 python run_test.py --parallel --num-workers 8 > output.log 2>&1
 ```
+
+TODO:
+
+* determine why so many more NetCDF-4 datasets were deemed compatible [here](https://github.com/developmentseed/datacube-guide/blob/main/docs/visualization/titiler/titiler-cmr/test-netcdf4-datasets.ipynb)
+* do a fuzzy match on variable selection or otherwise improve variable / band selection
