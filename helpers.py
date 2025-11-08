@@ -58,6 +58,7 @@ daac_map = {
     "NASA/LARC/SD/ASDC": "ASDC",
     "POCLOUD": "POCLOUD",
     "NSIDC_CPRD": "NSIDC",
+    "GHRC_DAAC": "GHRCDAAC"
 }
 
 @with_timeout(seconds=120)
