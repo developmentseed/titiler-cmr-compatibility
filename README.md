@@ -7,6 +7,8 @@ pip install -e ./titiler_cmr
 pip install -r requirements.txt
 ```
 
-Collections to investigate:
-- C2076104650-LPCLOUD
-- C3271566991-NSIDC_CPRD
+Running the tests:
+
+```bash
+python run_test.py --parallel --num-workers 8 > output.log 2>&1
+```

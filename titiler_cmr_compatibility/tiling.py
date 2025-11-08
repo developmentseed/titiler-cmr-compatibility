@@ -33,6 +33,8 @@ class IncompatibilityReason(str, Enum):
     UNSUPPORTED_FORMAT = "unsupported_format"
     CANT_OPEN_FILE = "cant_open_file"
     TILE_GENERATION_FAILED = "tile_generation_failed"
+    NO_GRANULE_FOUND = "no_granule_found"
+    FAILED_TO_EXTRACT = "failed_to_extract"
 
 @dataclass
 class GranuleTilingInfo:

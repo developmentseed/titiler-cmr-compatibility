@@ -19,7 +19,7 @@ import pandas as pd
 
 from .api import fetch_cmr_collections, fetch_granule_by_id
 from .metadata import extract_random_granule_info, extract_granule_tiling_info
-from .tiling import GranuleTilingInfo
+from .tiling import GranuleTilingInfo, IncompatibilityReason
 
 # Configure logging
 logging.basicConfig(
@@ -73,12 +73,13 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
         logger.info(f"[Worker {idx}] Starting collection {collection_concept_id}")
         ginfo = extract_random_granule_info(collection)
     except Exception as e:
-        logger.error(f"[Worker {idx}] Error processing collection {collection_concept_id}: {e}", exc_info=True)
-        ginfo = _minimal_ginfo(collection_concept_id, str(e))
+        logger.error(f"[Worker {idx}] Error extracting granule info {collection_concept_id}: {e}", exc_info=True)
+        return _minimal_ginfo(collection_concept_id, str(e), IncompatibilityReason.FAILED_TO_EXTRACT).to_report_dict()
+
     if ginfo is None:
         error_message = f"[Worker {idx}] No granule info returned for {collection_concept_id}"
         logger.warning(error_message)
-        ginfo = _minimal_ginfo(collection_concept_id, error_message)
+        return _minimal_ginfo(collection_concept_id, error_message, IncompatibilityReason.NO_GRANULE_FOUND).to_report_dict()
 
     try:
         if verbose:
@@ -89,6 +90,7 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
         logger.info(f"[Worker {idx}] Completed collection {collection_concept_id} using granule {ginfo.concept_id}.")
     except Exception as e:
         logger.error(f"[Worker {idx}] Error processing collection {collection_concept_id}: {e}", exc_info=True)
+        return _minimal_ginfo(collection_concept_id, error_message, IncompatibilityReason.TILE_GENERATION_FAILED).to_report_dict()
     return ginfo.to_report_dict()
 
 
