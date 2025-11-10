@@ -40,7 +40,7 @@ def fetch_cmr_collections(
         "page_size": page_size,
         "has_granules_or_cwic": "true",
         "sort_key[]": "-usage_score",
-        #"processing_level_id[]": ["3", "4"],
+        "processing_level_id[]": ["3", "4"],
     }
 
     # Add concept_id parameter if provided for debugging
