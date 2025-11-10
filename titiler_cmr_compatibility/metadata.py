@@ -88,7 +88,6 @@ def get_data_url(granule: Dict[str, Any]) -> Optional[str]:
                 break
             elif url.startswith('s3://'):
                 break
-
     return url if url else None
 
 

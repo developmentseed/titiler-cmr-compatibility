@@ -23,7 +23,7 @@ from .constants import (
     DEFAULT_TILE_Y,
     DEFAULT_TILE_Z,
 )
-from known_variables import known_variables, known_bands
+from known_variables import known_variables
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +79,14 @@ class GranuleTilingInfo:
         elif self.backend == "xarray":
             self.reader = XarrayReader
             # Find first known variable for xarray backend
-            variable = next(
+            self.variable = next(
                 (item for item in (self.data_variables or []) if item in known_variables),
                 None
             )
-            if not variable and len(self.data_variables) > 0:
-                variable = self.data_variables[0]
+            if not self.variable and len(self.data_variables) > 0:
+                self.variable = self.data_variables[0]
             self.reader_options = {
-                "variable": variable,
+                "variable": self.variable,
                 "opener": xarray_open_dataset
             }
 
@@ -116,19 +116,7 @@ class GranuleTilingInfo:
         )
 
         if self.backend == "rasterio":
-            band = next(
-                (item for item in self.data_variables if item in known_bands),
-                None
-            )
-            if band:
-                return f"{base_url}&bands={band}"
-            elif len(self.data_variables) > 0:
-                return f"{base_url}&bands={self.data_variables[0]}"
-            else:
-                logger.warning(
-                    f"No known band found for rasterio backend in granule {self.concept_id}"
-                )
-                return None
+            return base_url
 
         elif self.backend == "xarray":
             variable = next(
@@ -191,7 +179,7 @@ class GranuleTilingInfo:
                 auth=auth,
                 reader_options=self.reader_options or {},
             ) as src_dst:
-                _, _ = src_dst.tile(**shared_args)
+                img, _ = src_dst.tile(**shared_args)
             logger.info(f"Successfully tested tile generation for granule {self.concept_id}")
             self.tiling_compatible = True
             self.incompatible_reason = None

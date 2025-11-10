@@ -307,7 +307,7 @@ def process_collections(
 
     for idx, collection in enumerate(collections, 1):
         try:
-            report_dict = _process_single_collection(auth, [idx, collection], verbose)
+            _process_single_collection(auth, [idx, collection], verbose)
         except Exception as e:
             logger.error(f"Error processing collection {idx}: {e}")
             if verbose:
