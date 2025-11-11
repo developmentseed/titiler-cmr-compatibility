@@ -1,3 +1,4 @@
 __pycache__
 .ipynb_checkpoints/
 tiling_results.parquet
+output.png
