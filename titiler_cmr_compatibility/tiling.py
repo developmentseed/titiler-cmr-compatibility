@@ -88,29 +88,28 @@ class GranuleTilingInfo:
 
     def __post_init__(self):
         """Initialize computed fields by extracting metadata from granule."""
-        try:
-            # Create DataGranule wrapper
-            self.data_granule = DataGranule(self.granule_metadata)
+        # Create DataGranule wrapper
+        self.data_granule = DataGranule(self.granule_metadata)
 
-            # Extract basic metadata
-            self._extract_concept_id()
-            self._extract_data_url()
-            self._extract_temporal_extent()
-            self._extract_format_and_extension()
+        # Extract basic metadata
+        self._extract_concept_id()
+        self._extract_data_url()
+        self._extract_temporal_extent()
+        self._extract_format_and_extension()
 
-            # Validate format support
-            if not self._validate_format():
-                return  # Stop initialization if format is unsupported
+        # Validate format support
+        if not self._validate_format():
+            return  # Stop initialization if format is unsupported
 
-            # Extract data variables and backend
-            self._extract_data_variables_and_backend()
+        # Extract data variables and backend
+        self._extract_data_variables_and_backend()
 
-            # Setup reader configuration
-            self._setup_reader()
+        # Setup reader configuration
+        self._setup_reader()
 
-            # Generate tiles URL if we have all required info
-            if self.backend and self.data_variables:
-                self.tiles_url = self.generate_tiles_url_for_granule()
+        # Generate tiles URL if we have all required info
+        if self.backend and self.data_variables:
+            self.tiles_url = self.generate_tiles_url_for_granule()
 
     def _extract_concept_id(self):
         """Extract granule concept ID from metadata."""
