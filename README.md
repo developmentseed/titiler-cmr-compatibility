@@ -13,6 +13,14 @@ Running the tests:
 python run_test.py --parallel --num-workers 8 > output.log 2>&1
 ```
 
+To run a test using external links:
+
+```bash
+export TITILER_CMR_S3_AUTH_ACCESS=external
+python run_test.py --collection-id C2076106409-LPCLOUD --access-type external
+```
+
+
 TODO:
 
 * test L2 collections

@@ -7,6 +7,7 @@ CMR collections and generating tiles URLs for granules.
 
 import argparse
 import logging
+
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from multiprocessing import Pool
@@ -54,7 +55,12 @@ def _minimal_ginfo(collection_id: str, error_message: str, incompatible_reason: 
         incompatible_reason=incompatible_reason
     )
 
-def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [int, Dict[str, Any]], verbose: bool = False) -> Optional[Dict[str, Any]]:
+def _process_single_collection(
+    auth: earthaccess.Auth,
+    index_and_collection: [int, Dict[str, Any]],
+    verbose: bool = False,
+    access_type: Optional[str] = "direct"
+) -> Optional[Dict[str, Any]]:
     """
     Worker function to process a single collection.
 
@@ -74,7 +80,7 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
 
     try:
         logger.info(f"[Worker {idx}] Starting collection {idx}: {collection_concept_id}")
-        ginfo = extract_random_granule_info(collection)
+        ginfo = extract_random_granule_info(collection=collection, access_type=access_type)
     except Exception as e:
         logger.error(f"[Worker {idx}] Error extracting granule info {collection_concept_id}: {e}", exc_info=True)
         return _minimal_ginfo(collection_concept_id, str(e), IncompatibilityReason.FAILED_TO_EXTRACT).to_report_dict()
@@ -97,7 +103,7 @@ def _process_single_collection(auth: earthaccess.Auth, index_and_collection: [in
     return ginfo.to_report_dict()
 
 
-def process_granule_by_id(granule_id: str, auth: Optional[any] = None) -> None:
+def process_granule_by_id(granule_id: str, auth: Optional[any] = None, access_type: Optional[str] = "direct") -> None:
     """
     Process a specific granule and generate tiles URL.
 
@@ -112,7 +118,7 @@ def process_granule_by_id(granule_id: str, auth: Optional[any] = None) -> None:
             print(f"\n✗ Failed to fetch granule {granule_id}")
             return
 
-        granule_tiling_info = extract_granule_tiling_info(granule)
+        granule_tiling_info = extract_granule_tiling_info(granule=granule, access_type=access_type)
         if not granule_tiling_info:
             print(f"\n✗ Failed to extract tiling info for granule {granule_id}")
             return
@@ -153,7 +159,8 @@ def process_collections_parallel(
     output_file: str = "tiling_results.parquet",
     num_workers: int = 4,
     batch_size: int = 100,
-    timeout_per_collection: int = 180
+    timeout_per_collection: int = 180,
+    access_type: str = "direct"
 ) -> None:
     """
     Process collections in parallel using multiprocessing and batch operations.
@@ -213,7 +220,7 @@ def process_collections_parallel(
         with Pool(processes=num_workers) as pool:
             try:
                 # Use imap_unordered for better control
-                worker_func = partial(_process_single_collection, auth)
+                worker_func = partial(_process_single_collection, auth, access_type=access_type)
                 async_results = [
                     pool.apply_async(worker_func, (item,))
                     for item in enumerate(collections)
@@ -279,7 +286,7 @@ def process_collections(
     concept_id: Optional[str] = None,
     auth: Optional[any] = None,
     verbose: bool = False,
-    output_file: Optional[str] = None
+    access_type: Optional[str] = "direct"
 ) -> None:
     """
     Process collections and extract random granule information (sequential version).
@@ -307,7 +314,7 @@ def process_collections(
 
     for idx, collection in enumerate(collections, 1):
         try:
-            _process_single_collection(auth, [idx, collection], verbose)
+            _process_single_collection(auth, [idx, collection], verbose, access_type=access_type)
         except Exception as e:
             logger.error(f"Error processing collection {idx}: {e}")
             if verbose:
@@ -327,7 +334,7 @@ def main():
         description='Fetch and display CMR collection metadata or generate tiles URL for specific granule'
     )
     parser.add_argument(
-        '--collection',
+        '--collection-id',
         type=str,
         help='Specific collection concept ID to search for'
     )
@@ -387,6 +394,12 @@ def main():
         default=30,
         help='Timeout in seconds for processing each collection (default: 30). Use with --parallel.'
     )
+    parser.add_argument(
+        '--access-type',
+        type=str,
+        default="direct",
+        help='Access method to use when determining granule url (default: "direct" for S3 links).'
+    )    
     args = parser.parse_args()
 
     # Configure logging level
@@ -406,7 +419,7 @@ def main():
 
     # Handle granule-specific mode
     if args.granule_id:
-        process_granule_by_id(args.granule_id, auth)
+        process_granule_by_id(args.granule_id, auth, access=args.access_type)
         return
 
     # Handle collection mode
@@ -415,19 +428,19 @@ def main():
         process_collections_parallel(
             auth=auth,
             total_collections=args.total_collections,
-            output_file=args.output_file,
             num_workers=args.num_workers,
             batch_size=args.batch_size,
-            timeout_per_collection=args.timeout
+            timeout_per_collection=args.timeout,
+            access_type=args.access_type
         )
     else:
         # Use sequential processing mode
         process_collections(
             page_size=args.page_size,
-            concept_id=args.collection,
+            concept_id=args.collection_id,
             auth=auth,
             verbose=args.verbose,
-            output_file=args.output_file
+            access_type=args.access_type
         )
 
 

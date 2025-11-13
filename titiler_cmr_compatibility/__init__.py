@@ -36,9 +36,6 @@ from .validation import (
 
 # Metadata functions
 from .metadata import (
-    extract_file_format_from_granule_metadata,
-    get_data_url,
-    extract_data_variables,
     extract_granule_tiling_info,
     extract_collection_file_format,
     extract_data_centers,
@@ -80,9 +77,6 @@ __all__ = [
     "is_supported_format",
     "is_supported_extension",
     # Metadata
-    "extract_file_format_from_granule_metadata",
-    "get_data_url",
-    "extract_data_variables",
     "extract_granule_tiling_info",
     "extract_collection_file_format",
     "extract_data_centers",

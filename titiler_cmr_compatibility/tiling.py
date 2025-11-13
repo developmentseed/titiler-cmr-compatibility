@@ -5,11 +5,13 @@ This module provides the GranuleTilingInfo dataclass for managing tile
 generation information and testing tile generation functionality.
 """
 
+import os
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Tuple, Any, Type
+from typing import Optional, List, Tuple, Any, Type, Dict
 
+from earthaccess import DataGranule
 from titiler.cmr.backend import CMRBackend
 from titiler.cmr.reader import xarray_open_dataset
 from rio_tiler.io import Reader
@@ -23,7 +25,9 @@ from .constants import (
     DEFAULT_TILE_Y,
     DEFAULT_TILE_Z,
 )
-from known_variables import known_variables
+from .validation import is_supported_format, is_supported_extension
+from .helpers import open_xarray_dataset, open_rasterio_dataset
+from .known_variables import known_variables
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,7 @@ class IncompatibilityReason(str, Enum):
     TIMEOUT = "timeout"
     CANT_EXTRACT_VARIABLES = "cant_extract_variables"
 
+
 @dataclass
 class GranuleTilingInfo:
     """
@@ -45,33 +50,208 @@ class GranuleTilingInfo:
 
     This class encapsulates all metadata and configuration needed to generate
     tiles from a CMR granule using either rasterio or xarray backends.
+
+    The class is self-initializing - pass in the raw granule metadata and
+    it will extract all necessary information in __post_init__.
     """
-
+    # Required inputs
     collection_concept_id: str
-    concept_id: Optional[str] = None
+
+    # Optional
+    granule_metadata: Optional[Dict[str, Any]] = None
+
+    # Optional configuration
+    collection_file_format: Optional[str] = None
+    access_type: str = "direct"  # "direct" or "indirect"
     data_centers: Optional[List[str]] = None
-    temporal_extent: Optional[Tuple[str, str]] = None
-    data_variables: Optional[List[str]] = None
-    backend: Optional[str] = None
-    data_url: Optional[str] = None
-    format: Optional[str] = None
-    extension: Optional[str] = None
-    error_message: Optional[str] = None
 
-    # Computed fields (set in __post_init__)
-    tiles_url: Optional[str] = None
-    reader: Optional[Type] = None
-    reader_options: Optional[dict] = None
-    variable: Optional[str] = None
+    # Fields extracted from granule metadata (set in __post_init__)
+    data_granule: Optional[DataGranule] = field(default=None, init=False)
+    concept_id: Optional[str] = field(default=None, init=False)
+    data_url: Optional[str] = field(default=None, init=False)
+    temporal_extent: Optional[Tuple[str, str]] = field(default=None, init=False)
+    data_variables: Optional[List[str]] = field(default=None, init=False)
+    backend: Optional[str] = field(default=None, init=False)
+    format: Optional[str] = field(default=None, init=False)
+    extension: Optional[str] = field(default=None, init=False)
+    data_center_name: Optional[str] = field(default=None, init=False)
 
-    # tiling result fields
-    tiling_compatible: bool = False
-    incompatible_reason: Optional[IncompatibilityReason] = None
+    # Computed fields for tiling
+    tiles_url: Optional[str] = field(default=None, init=False)
+    reader: Optional[Type] = field(default=None, init=False)
+    reader_options: Optional[dict] = field(default=None, init=False)
+    variable: Optional[str] = field(default=None, init=False)
+
+    # Status fields
+    error_message: Optional[str] = field(default=None, init=True)
+    tiling_compatible: bool = field(default=False, init=True)
+    incompatible_reason: Optional[IncompatibilityReason] = field(default=None, init=True)
 
     def __post_init__(self):
-        """Initialize computed fields based on backend and data variables."""
-        if self.backend and self.data_variables:
-            self.tiles_url = self.generate_tiles_url_for_granule()
+        """Initialize computed fields by extracting metadata from granule."""
+        try:
+            # Create DataGranule wrapper
+            self.data_granule = DataGranule(self.granule_metadata)
+
+            # Extract basic metadata
+            self._extract_concept_id()
+            self._extract_data_url()
+            self._extract_temporal_extent()
+            self._extract_format_and_extension()
+
+            # Validate format support
+            if not self._validate_format():
+                return  # Stop initialization if format is unsupported
+
+            # Extract data variables and backend
+            self._extract_data_variables_and_backend()
+
+            # Setup reader configuration
+            self._setup_reader()
+
+            # Generate tiles URL if we have all required info
+            if self.backend and self.data_variables:
+                self.tiles_url = self.generate_tiles_url_for_granule()
+
+        except Exception as e:
+            error_msg = f"Error initializing GranuleTilingInfo: {e}"
+            logger.error(error_msg)
+            self.error_message = error_msg
+            self.incompatible_reason = IncompatibilityReason.FAILED_TO_EXTRACT
+
+    def _extract_concept_id(self):
+        """Extract granule concept ID from metadata."""
+        granule_meta = self.granule_metadata.get("meta", {})
+        self.concept_id = granule_meta.get("concept-id")
+
+    def _extract_data_url(self):
+        """Extract data URL using earthaccess DataGranule.data_links()."""
+        try:
+            # Get data links with specified access type
+            data_links = self.data_granule.data_links(access=self.access_type)
+            if data_links:
+                self.data_url = data_links[0]
+            else:
+                # Fall back to "indirect" if "direct" returns nothing
+                if self.access_type == "direct":
+                    logger.warning(f"No direct access links found for granule {self.concept_id}, trying external")
+                    data_links = self.data_granule.data_links(access="external")
+                    if data_links:
+                        self.data_url = data_links[0]
+
+            if not self.data_url:
+                error_msg = "Could not find data URL in granule metadata"
+                logger.error(error_msg)
+                self.error_message = error_msg
+                self.incompatible_reason = IncompatibilityReason.FAILED_TO_EXTRACT
+        except Exception as e:
+            error_msg = f"Error extracting data URL: {e}"
+            logger.error(error_msg)
+            self.error_message = error_msg
+            self.incompatible_reason = IncompatibilityReason.FAILED_TO_EXTRACT
+
+    def _extract_temporal_extent(self):
+        """Extract temporal extent from granule metadata."""
+        from .umm_helpers import parse_temporal
+        granule_umm = self.granule_metadata.get("umm", {})
+        self.temporal_extent = parse_temporal(granule_umm)
+
+    def _extract_format_and_extension(self):
+        """Extract file format and extension from granule metadata."""
+        # Try collection format first, then granule-level format
+        self.format = self.collection_file_format or self._extract_file_format_from_granule()
+
+        # Extract extension from data URL
+        if self.data_url:
+            self.extension = os.path.splitext(self.data_url)[1].lstrip('.')
+
+    def _extract_file_format_from_granule(self) -> Optional[str]:
+        """
+        Extract file format from granule-level metadata.
+
+        Returns:
+            File format string or None if not found
+        """
+        umm = self.granule_metadata.get("umm", {})
+        data_granule = umm.get("DataGranule", {})
+        archive_info = data_granule.get("ArchiveAndDistributionInformation", {})
+
+        # Handle both list and dict formats for ArchiveAndDistributionInformation
+        if isinstance(archive_info, list) and archive_info:
+            archive_info = archive_info[0]  # Take the first item if it's a list
+
+        if isinstance(archive_info, list) and archive_info:
+            format_info = archive_info[0]
+            fmt = format_info.get("Format")
+            if fmt:
+                return fmt
+        elif isinstance(archive_info, dict):
+            fmt = archive_info.get("Format")
+            if fmt:
+                return fmt
+
+        return None
+
+    def _validate_format(self) -> bool:
+        """
+        Validate if granule format or extension is supported.
+
+        Returns:
+            True if supported, False otherwise (sets incompatible_reason)
+        """
+        if not self.data_url:
+            return False
+
+        if self.format is not None:
+            is_supported = is_supported_format(self.format)
+            error_message = f"Format {self.format} is not supported"
+        else:
+            is_supported = is_supported_extension(self.extension)
+            error_message = f"Extension {self.extension} is not supported"
+
+        if not is_supported:
+            logger.warning(error_message)
+            self.error_message = error_message
+            self.incompatible_reason = IncompatibilityReason.UNSUPPORTED_FORMAT
+            return False
+
+        return True
+
+    def _extract_data_variables_and_backend(self):
+        """Extract data variables and determine backend (rasterio or xarray)."""
+        if not self.data_url:
+            return
+
+        try:
+            file_format = self.format or self.extension
+
+            if file_format in COG_FORMATS or file_format in COG_EXTENSIONS:
+                # Use rasterio backend
+                with open_rasterio_dataset(self.data_url, self.data_center_name) as src:
+                    self.data_variables = src.descriptions
+                self.backend = "rasterio"
+            else:
+                # Use xarray backend
+                with open_xarray_dataset(self.data_url, self.data_center_name) as ds:
+                    self.data_variables = list(ds.data_vars.keys())
+                self.backend = "xarray"
+
+            if not self.data_variables:
+                error_msg = "Can't extract variables"
+                logger.error(error_msg)
+                self.error_message = error_msg
+                self.incompatible_reason = IncompatibilityReason.CANT_EXTRACT_VARIABLES
+
+        except Exception as e:
+            error_msg = f"Error opening {self.data_url}: {e}"
+            logger.error(error_msg)
+            self.error_message = error_msg
+            self.incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
+
+    def _setup_reader(self):
+        """Setup the appropriate reader and reader options based on backend."""
+        if not self.backend or not self.data_variables:
+            return
 
         if self.backend == "rasterio":
             self.reader = Reader
@@ -110,6 +290,7 @@ class GranuleTilingInfo:
         if not self.backend or not self.data_variables:
             raise ValueError("Cannot generate tiles URL without backend and data variables")
 
+        import pdb; pdb.set_trace()
         base_url = (
             f"{TITILER_CMR_ENDPOINT}/tiles/WebMercatorQuad/{tile_z}/{tile_x}/{tile_y}.png"
             f"?concept_id={self.collection_concept_id}&backend={self.backend}"
@@ -179,7 +360,7 @@ class GranuleTilingInfo:
                 auth=auth,
                 reader_options=self.reader_options or {},
             ) as src_dst:
-                img, _ = src_dst.tile(**shared_args)
+                _ = src_dst.tile(**shared_args)
             logger.info(f"Successfully tested tile generation for granule {self.concept_id}")
             self.tiling_compatible = True
             self.incompatible_reason = None
@@ -187,9 +368,7 @@ class GranuleTilingInfo:
             return True
         except Exception as e:
             error_message = f"Error testing tile generation for granule {self.concept_id}: {e}"
-            raise e
             logger.error(error_message)
-
             self.tiling_compatible = False
             self.error_message = str(e)
             self.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED
