@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def extract_granule_tiling_info(
     granule: Dict[str, Any],
     collection_file_format: Optional[str] = None,
-    data_centers: Optional[List[str]] = None,
+    data_center_short_name: Optional[str] = None,
     access_type: str = "direct"
 ) -> Optional[GranuleTilingInfo]:
     """
@@ -52,7 +52,7 @@ def extract_granule_tiling_info(
         collection_concept_id=collection_concept_id,
         collection_file_format=collection_file_format,
         access_type=access_type,
-        data_centers=data_centers
+        data_center_short_name=data_center_short_name
     )
 
 
@@ -82,7 +82,7 @@ def extract_collection_file_format(collection: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def extract_data_centers(collection: Dict[str, Any]) -> List[str]:
+def extract_data_center(collection: Dict[str, Any]) -> List[str]:
     """
     Extract unique data center names from collection metadata.
 
@@ -101,8 +101,7 @@ def extract_data_centers(collection: Dict[str, Any]) -> List[str]:
         if short_name not in data_center_names:
             data_center_names.append(short_name)
 
-    import pdb; pdb.set_trace()
-    return data_center_names
+    return data_center_names[0]
 
 
 def extract_random_granule_info(collection: Dict[str, Any], access_type: Optional[str] = "direct") -> Optional[GranuleTilingInfo]:
@@ -120,7 +119,7 @@ def extract_random_granule_info(collection: Dict[str, Any], access_type: Optiona
 
     # Extract collection-level metadata
     collection_file_format = extract_collection_file_format(collection)
-    data_center_names = extract_data_centers(collection)
+    data_center_short_name = extract_data_center(collection)
 
     # Fetch and process random granule
     granule = fetch_random_granule_metadata(concept_id)
@@ -131,6 +130,6 @@ def extract_random_granule_info(collection: Dict[str, Any], access_type: Optiona
     return extract_granule_tiling_info(
         granule=granule,
         collection_file_format=collection_file_format,
-        data_centers=data_center_names,
+        data_center_short_name=data_center_short_name,
         access_type=access_type
     )

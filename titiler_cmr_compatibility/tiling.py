@@ -63,7 +63,7 @@ class GranuleTilingInfo:
     # Optional configuration
     collection_file_format: Optional[str] = None
     access_type: str = "direct"  # "direct" or "indirect"
-    data_centers: Optional[List[str]] = None
+    data_center_short_name: Optional[str] = None
 
     # Fields extracted from granule metadata (set in __post_init__)
     data_granule: Optional[DataGranule] = field(default=None, init=False)
@@ -74,7 +74,6 @@ class GranuleTilingInfo:
     backend: Optional[str] = field(default=None, init=False)
     format: Optional[str] = field(default=None, init=False)
     extension: Optional[str] = field(default=None, init=False)
-    data_center_name: Optional[str] = field(default=None, init=False)
 
     # Computed fields for tiling
     tiles_url: Optional[str] = field(default=None, init=False)
@@ -112,12 +111,6 @@ class GranuleTilingInfo:
             # Generate tiles URL if we have all required info
             if self.backend and self.data_variables:
                 self.tiles_url = self.generate_tiles_url_for_granule()
-
-        except Exception as e:
-            error_msg = f"Error initializing GranuleTilingInfo: {e}"
-            logger.error(error_msg)
-            self.error_message = error_msg
-            self.incompatible_reason = IncompatibilityReason.FAILED_TO_EXTRACT
 
     def _extract_concept_id(self):
         """Extract granule concept ID from metadata."""
@@ -227,12 +220,13 @@ class GranuleTilingInfo:
 
             if file_format in COG_FORMATS or file_format in COG_EXTENSIONS:
                 # Use rasterio backend
-                with open_rasterio_dataset(self.data_url, self.data_center_name) as src:
+                with open_rasterio_dataset(self.data_url, self.data_center_short_name) as src:
                     self.data_variables = src.descriptions
                 self.backend = "rasterio"
             else:
                 # Use xarray backend
-                with open_xarray_dataset(self.data_url, self.data_center_name) as ds:
+                with open_xarray_dataset(self.data_url, self.data_center_short_name) as ds:
+                    import pdb; pdb.set_trace()
                     self.data_variables = list(ds.data_vars.keys())
                 self.backend = "xarray"
 
@@ -290,7 +284,6 @@ class GranuleTilingInfo:
         if not self.backend or not self.data_variables:
             raise ValueError("Cannot generate tiles URL without backend and data variables")
 
-        import pdb; pdb.set_trace()
         base_url = (
             f"{TITILER_CMR_ENDPOINT}/tiles/WebMercatorQuad/{tile_z}/{tile_x}/{tile_y}.png"
             f"?concept_id={self.collection_concept_id}&backend={self.backend}"

@@ -38,7 +38,7 @@ from .validation import (
 from .metadata import (
     extract_granule_tiling_info,
     extract_collection_file_format,
-    extract_data_centers,
+    extract_data_center,
     extract_random_granule_info,
 )
 
@@ -79,7 +79,7 @@ __all__ = [
     # Metadata
     "extract_granule_tiling_info",
     "extract_collection_file_format",
-    "extract_data_centers",
+    "extract_data_center",
     "extract_random_granule_info",
     # Tiling
     "GranuleTilingInfo",
