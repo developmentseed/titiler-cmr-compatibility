@@ -41,6 +41,7 @@ def fetch_cmr_collections(
         "has_granules_or_cwic": "true",
         "sort_key[]": "-usage_score",
         "processing_level_id[]": ["3", "4"],
+        "provider": "GES_DISC"
     }
 
     # Add concept_id parameter if provided for debugging
@@ -129,7 +130,7 @@ def fetch_random_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
         granules = data.get("items", [])
 
         if granules:
-            return granules[0]
+            return granules[0], total_num_granules
         return None
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching granule metadata for collection {concept_id}: {e}")

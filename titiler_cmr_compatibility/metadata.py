@@ -18,7 +18,8 @@ def extract_granule_tiling_info(
     granule: Dict[str, Any],
     collection_file_format: Optional[str] = None,
     data_center_short_name: Optional[str] = None,
-    access_type: str = "direct"
+    access_type: str = "direct",
+    num_granules: Optional[int] = None
 ) -> Optional[GranuleTilingInfo]:
     """
     Generate tiling information for a specific granule.
@@ -52,7 +53,8 @@ def extract_granule_tiling_info(
         collection_concept_id=collection_concept_id,
         collection_file_format=collection_file_format,
         access_type=access_type,
-        data_center_short_name=data_center_short_name
+        data_center_short_name=data_center_short_name,
+        num_granules=num_granules
     )
 
 
@@ -122,7 +124,7 @@ def extract_random_granule_info(collection: Dict[str, Any], access_type: Optiona
     data_center_short_name = extract_data_center(collection)
 
     # Fetch and process random granule
-    granule = fetch_random_granule_metadata(concept_id)
+    granule, num_granules = fetch_random_granule_metadata(concept_id)
     if not granule:
         logger.warning(f"No granule found for collection {concept_id}")
         return None
@@ -131,5 +133,6 @@ def extract_random_granule_info(collection: Dict[str, Any], access_type: Optiona
         granule=granule,
         collection_file_format=collection_file_format,
         data_center_short_name=data_center_short_name,
-        access_type=access_type
+        access_type=access_type,
+        num_granules=num_granules
     )

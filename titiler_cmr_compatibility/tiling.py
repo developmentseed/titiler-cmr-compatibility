@@ -59,6 +59,7 @@ class GranuleTilingInfo:
 
     # Optional
     granule_metadata: Optional[Dict[str, Any]] = None
+    num_granules: Optional[int] = None
 
     # Optional configuration
     collection_file_format: Optional[str] = None
@@ -89,23 +90,24 @@ class GranuleTilingInfo:
     def __post_init__(self):
         """Initialize computed fields by extracting metadata from granule."""
         # Create DataGranule wrapper
-        self.data_granule = DataGranule(self.granule_metadata)
+        if self.granule_metadata:
+            self.data_granule = DataGranule(self.granule_metadata)
 
-        # Extract basic metadata
-        self._extract_concept_id()
-        self._extract_data_url()
-        self._extract_temporal_extent()
-        self._extract_format_and_extension()
+            # Extract basic metadata
+            self._extract_concept_id()
+            self._extract_data_url()
+            self._extract_temporal_extent()
+            self._extract_format_and_extension()
 
-        # Validate format support
-        if not self._validate_format():
-            return  # Stop initialization if format is unsupported
+            # Validate format support
+            if not self._validate_format():
+                return  # Stop initialization if format is unsupported
 
-        # Extract data variables and backend
-        self._extract_data_variables_and_backend()
+            # Extract data variables and backend
+            self._extract_data_variables_and_backend()
 
-        # Setup reader configuration
-        self._setup_reader()
+            # Setup reader configuration
+            self._setup_reader()
 
         # Generate tiles URL if we have all required info
         if self.backend and self.data_variables:
@@ -225,7 +227,6 @@ class GranuleTilingInfo:
             else:
                 # Use xarray backend
                 with open_xarray_dataset(self.data_url, self.data_center_short_name) as ds:
-                    import pdb; pdb.set_trace()
                     self.data_variables = list(ds.data_vars.keys())
                 self.backend = "xarray"
 
@@ -376,6 +377,7 @@ class GranuleTilingInfo:
         return {
             "collection_concept_id": self.collection_concept_id,
             "concept_id": self.concept_id,
+            "data_center": self.data_center_short_name,
             "data_url": self.data_url,
             "backend": self.backend,
             "format": self.format,
@@ -386,4 +388,5 @@ class GranuleTilingInfo:
             "tiles_url": self.tiles_url,
             "variable": self.variable,
             "data_variables": self.data_variables,
+            "num_granules": self.num_granules
         }

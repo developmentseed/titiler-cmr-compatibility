@@ -29,7 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def _print_verbose_granule_test(ginfo: GranuleTilingInfo, auth: earthaccess.Auth):
+def _print_and_test(ginfo: GranuleTilingInfo, auth: earthaccess.Auth):
     print(f"  Granule Concept ID: {ginfo.concept_id}")
     print(f"  Backend: {ginfo.backend}")
     print(f"  Format: {ginfo.format}")
@@ -58,8 +58,8 @@ def _minimal_ginfo(collection_id: str, error_message: str, incompatible_reason: 
 def _process_single_collection(
     auth: earthaccess.Auth,
     index_and_collection: [int, Dict[str, Any]],
-    verbose: bool = False,
-    access_type: Optional[str] = "direct"
+    access_type: Optional[str] = "direct",
+    print_collection_info: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
     Worker function to process a single collection.
@@ -91,8 +91,8 @@ def _process_single_collection(
         return _minimal_ginfo(collection_concept_id, error_message, IncompatibilityReason.NO_GRANULE_FOUND).to_report_dict()
 
     try:
-        if verbose:
-            ginfo = _print_verbose_granule_test(ginfo, auth)
+        if print_collection_info:
+            ginfo = _print_and_test(ginfo, auth)
         else:
             if ginfo.tiles_url:
                 ginfo.test_tiling(auth)
@@ -123,7 +123,7 @@ def process_granule_by_id(granule_id: str, auth: Optional[any] = None, access_ty
             print(f"\n✗ Failed to extract tiling info for granule {granule_id}")
             return
 
-        _print_verbose_granule_test(granule_tiling_info, auth)
+        _print_and_test(granule_tiling_info, auth)
     except Exception as e:
         logger.error(f"Error processing granule {granule_id}: {e}")
         print(f"\n✗ Error: {e}")
@@ -285,7 +285,6 @@ def process_collections(
     page_size: int = 100,
     concept_id: Optional[str] = None,
     auth: Optional[any] = None,
-    verbose: bool = False,
     access_type: Optional[str] = "direct"
 ) -> None:
     """
@@ -309,20 +308,20 @@ def process_collections(
         return
 
     print(f"Retrieved {len(collections)} collections\n")
-    if verbose:
-        print("=" * 80)
+    print("=" * 80)
 
     for idx, collection in enumerate(collections, 1):
         try:
-            _process_single_collection(auth, [idx, collection], verbose, access_type=access_type)
+            _process_single_collection(
+                auth=auth,
+                index_and_collection=[idx, collection],
+                access_type=access_type,
+                print_collection_info=True
+            )
         except Exception as e:
             logger.error(f"Error processing collection {idx}: {e}")
-            if verbose:
-                print(f"  Error: {e}")
-                print("-" * 80)
-            else:
-                print(f"Error processing collection {idx}: {e}")
-                raise e
+            print(f"  Error: {e}")
+            print("-" * 80)
 
 
 def main():
@@ -361,9 +360,9 @@ def main():
         help='Skip earthaccess authentication (some features may not work)'
     )
     parser.add_argument(
-        '--verbose',
+        '--debug',
         action='store_true',
-        help='Enable verbose output and logging'
+        help='Print debug logging'
     )
     parser.add_argument(
         '--output-file',
@@ -403,7 +402,7 @@ def main():
     args = parser.parse_args()
 
     # Configure logging level
-    if args.verbose:
+    if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Initialize authentication unless explicitly disabled
@@ -439,7 +438,6 @@ def main():
             page_size=args.page_size,
             concept_id=args.collection_id,
             auth=auth,
-            verbose=args.verbose,
             access_type=args.access_type
         )
 
