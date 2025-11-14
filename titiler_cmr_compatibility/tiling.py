@@ -26,7 +26,7 @@ from .constants import (
     DEFAULT_TILE_Z,
 )
 from .validation import is_supported_format, is_supported_extension
-from .helpers import open_xarray_dataset, open_rasterio_dataset
+from .helpers import open_xarray_dataset, open_rasterio_dataset, check_for_groups
 from .known_variables import known_variables
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,7 @@ class IncompatibilityReason(str, Enum):
     FAILED_TO_EXTRACT = "failed_to_extract"
     TIMEOUT = "timeout"
     CANT_EXTRACT_VARIABLES = "cant_extract_variables"
+    GROUP_STRUCTURE = "group_structure"
 
 
 @dataclass
@@ -87,6 +88,7 @@ class GranuleTilingInfo:
     error_message: Optional[str] = field(default=None, init=True)
     tiling_compatible: bool = field(default=False, init=True)
     incompatible_reason: Optional[IncompatibilityReason] = field(default=None, init=True)
+    groups: Optional[List[str]] = field(default=None, init=True)
 
     def __post_init__(self):
         """Initialize computed fields by extracting metadata from granule."""
@@ -234,8 +236,17 @@ class GranuleTilingInfo:
             if not self.data_variables:
                 error_msg = "Can't extract variables"
                 logger.error(error_msg)
-                self.error_message = error_msg
-                self.incompatible_reason = IncompatibilityReason.CANT_EXTRACT_VARIABLES
+
+                # Check if file has group structure
+                groups = check_for_groups(self.data_url, self.data_center_short_name)
+                if groups:
+                    self.groups = groups
+                    self.incompatible_reason = IncompatibilityReason.GROUP_STRUCTURE
+                    self.error_message = f"{error_msg} - file has group structure with groups: {groups}"
+                    logger.info(f"File {self.data_url} has group structure: {groups}")
+                else:
+                    self.error_message = error_msg
+                    self.incompatible_reason = IncompatibilityReason.CANT_EXTRACT_VARIABLES
 
         except Exception as e:
             error_msg = f"Error opening {self.data_url}: {e}"
@@ -391,4 +402,5 @@ class GranuleTilingInfo:
             "data_variables": self.data_variables,
             "num_granules": self.num_granules,
             "processing_level": self.processing_level,
+            "groups": self.groups,
         }
