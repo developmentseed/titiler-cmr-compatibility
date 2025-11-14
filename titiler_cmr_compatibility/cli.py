@@ -418,7 +418,7 @@ def main():
 
     # Handle granule-specific mode
     if args.granule_id:
-        process_granule_by_id(args.granule_id, auth, access=args.access_type)
+        process_granule_by_id(args.granule_id, auth, access_type=args.access_type)
         return
 
     # Handle collection mode

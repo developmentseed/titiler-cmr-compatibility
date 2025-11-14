@@ -38,10 +38,9 @@ def fetch_cmr_collections(
     # These params return matching collections exactly the same number as the search UI (10,752)
     params = {
         "page_size": page_size,
-        "has_granules_or_cwic": "true",
         "sort_key[]": "-usage_score",
-        "processing_level_id[]": ["3", "4"],
-        "provider": "GES_DISC"
+        # sourced from https://cmr.earthdata.nasa.gov/search/providers
+        "provider[]": "GHRC,ASF,GESDISCCLD,GESDISCCLD,LARC_CLOUD,NSIDCV0,NSIDC_ECS,NSIDC_CPRD,ORNL_CLOUD,LAADS,LARC_ASDC,LPDAAC_ECS,OB_DAAC,GHRC_DAAC,LARC,LPCUMULUS,GHRC_CLOUD,LPCLOUD,ORNL_DAAC,POCLOUD,PODAAC,SEDAC,GES_DISC,ESDIS,OB_CLOUD".split(",")
     }
 
     # Add concept_id parameter if provided for debugging

@@ -60,6 +60,7 @@ class GranuleTilingInfo:
     # Optional
     granule_metadata: Optional[Dict[str, Any]] = None
     num_granules: Optional[int] = None
+    processing_level: Optional[str] = None
 
     # Optional configuration
     collection_file_format: Optional[str] = None
@@ -388,5 +389,6 @@ class GranuleTilingInfo:
             "tiles_url": self.tiles_url,
             "variable": self.variable,
             "data_variables": self.data_variables,
-            "num_granules": self.num_granules
+            "num_granules": self.num_granules,
+            "processing_level": self.processing_level,
         }
