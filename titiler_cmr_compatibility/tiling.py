@@ -64,7 +64,7 @@ class GranuleTilingInfo:
 
     # Optional configuration
     collection_file_format: Optional[str] = None
-    access_type: str = "direct"  # "direct" or "indirect"
+    access_type: str = "direct"  # "direct" or "external"
     data_center_short_name: Optional[str] = None
 
     # Fields extracted from granule metadata (set in __post_init__)
@@ -127,7 +127,7 @@ class GranuleTilingInfo:
             if data_links:
                 self.data_url = data_links[0]
             else:
-                # Fall back to "indirect" if "direct" returns nothing
+                # Fall back to "external" if "direct" returns nothing
                 if self.access_type == "direct":
                     logger.warning(f"No direct access links found for granule {self.concept_id}, trying external")
                     data_links = self.data_granule.data_links(access="external")
