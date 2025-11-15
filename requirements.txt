@@ -1,3 +1,4 @@
 earthaccess>=0.15.0
 pandas
+tenacity
 xarray>=2024.10.0

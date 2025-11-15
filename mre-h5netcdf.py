@@ -6,7 +6,7 @@ from rio_tiler.models import ImageData
 import numpy as np
 
 cmr_query = {
-    "concept_id": "G2221924242-GES_DISC",
+    "concept_id": "C1615905582-GES_DISC",
 }
 auth = earthaccess.login()
 
@@ -23,7 +23,7 @@ with CMRBackend(
     reader=XarrayReader,
     auth=auth,
     reader_options={
-        "variable": "aerosol_optical_thickness_550_land",
+        "variable": "blah",
         "opener": xarray_open_dataset
     }
 ) as src_dst:
