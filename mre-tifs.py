@@ -1,23 +1,33 @@
 import earthaccess
 from titiler.cmr.backend import CMRBackend
-from titiler.cmr.reader import MultiFilesBandsReader
 from rio_tiler.io import Reader
 from rio_tiler.models import ImageData
 import numpy as np
 
 cmr_query = {
-    "concept_id": "C2021957295-LPCLOUD",
+    "concept_id": "C2746980408-LPCLOUD",
 }
 auth = earthaccess.login()
 
+#x, y, z = 0, 0, 0
+x, y, z = 12, 3934, 2709
 tile_args = {
-    "tile_x": 0,
-    "tile_y": 0,
-    "tile_z": 0,
-    "cmr_query": cmr_query,
+    "tile_x": x,
+    "tile_y": y,
+    "tile_z": z,
+    "cmr_query": cmr_query
 }
 
-def save_to_png(image_data: ):
+
+with CMRBackend(
+    reader=Reader,
+    auth=auth,
+) as src_dst:
+    image, _ = src_dst.tile(**tile_args)
+    print("successful tile operation")
+
+
+def save_to_png(image_data: ImageData):
     # Rescale to 0-255 range (for 8-bit PNG)
     # Get min/max from your data
     data = image_data.data
@@ -33,15 +43,6 @@ def save_to_png(image_data: ):
     
     with open("output.png", "wb") as f:
         f.write(png_bytes)
-
-
-with CMRBackend(
-    reader=Reader,
-    auth=auth
-) as src_dst:
-    image, _ = src_dst.tile(**tile_args)
-    print("successful tile operation")
-
 
 
 
