@@ -42,6 +42,7 @@ class IncompatibilityReason(str, Enum):
     TIMEOUT = "timeout"
     CANT_EXTRACT_VARIABLES = "cant_extract_variables"
     GROUP_STRUCTURE = "group_structure"
+    NO_XY_DIMENSIONS = "no_xy_dimensions"
 
 
 @dataclass
@@ -376,7 +377,14 @@ class GranuleTilingInfo:
             logger.error(error_message)
             self.tiling_compatible = False
             self.error_message = str(e)
-            self.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED
+
+            # Check for specific error types
+            error_str = str(e).lower()
+            if "couldn't find x/y dimensions" in error_str or "x/y dimensions" in error_str:
+                self.incompatible_reason = IncompatibilityReason.NO_XY_DIMENSIONS
+            else:
+                self.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED
+
             return False
 
     def to_report_dict(self) -> dict:
