@@ -21,6 +21,12 @@ import pandas as pd
 from .api import fetch_cmr_collections, fetch_granule_by_id
 from .metadata import extract_random_granule_info, extract_granule_tiling_info
 from .tiling import GranuleTilingInfo, IncompatibilityReason
+from .lithops_processing import (
+    create_collection_directories,
+    process_all_collections,
+    get_unprocessed_collections,
+    download_results_from_s3
+)
 
 # Configure logging
 logging.basicConfig(
@@ -398,7 +404,43 @@ def main():
         type=str,
         default="direct",
         help='Access method to use when determining granule url (default: "direct" for S3 links).'
-    )    
+    )
+    parser.add_argument(
+        '--lithops',
+        action='store_true',
+        help='Use Lithops for distributed processing'
+    )
+    parser.add_argument(
+        '--s3-bucket',
+        type=str,
+        help='S3 bucket name for Lithops processing (required with --lithops)'
+    )
+    parser.add_argument(
+        '--s3-prefix',
+        type=str,
+        default='collections',
+        help='S3 prefix for collection directories (default: collections)'
+    )
+    parser.add_argument(
+        '--lithops-setup',
+        action='store_true',
+        help='Setup phase: create S3 directories for collections (use with --lithops)'
+    )
+    parser.add_argument(
+        '--lithops-process',
+        action='store_true',
+        help='Process phase: process all collections using Lithops (use with --lithops)'
+    )
+    parser.add_argument(
+        '--lithops-reprocess',
+        action='store_true',
+        help='Reprocess only unprocessed collections (use with --lithops)'
+    )
+    parser.add_argument(
+        '--lithops-download',
+        action='store_true',
+        help='Download all results from S3 (use with --lithops)'
+    )
     args = parser.parse_args()
 
     # Configure logging level
@@ -421,8 +463,99 @@ def main():
         process_granule_by_id(args.granule_id, auth, access_type=args.access_type)
         return
 
-    # Handle collection mode
-    if args.parallel:
+    # Handle Lithops mode
+    if args.lithops:
+        if not args.s3_bucket:
+            print("Error: --s3-bucket is required when using --lithops")
+            return
+
+        if args.lithops_setup:
+            # Setup phase: create collection directories in S3
+            print(f"Creating collection directories in S3 bucket: {args.s3_bucket}")
+            print(f"S3 prefix: {args.s3_prefix}\n")
+
+            concept_ids = create_collection_directories(
+                bucket=args.s3_bucket,
+                prefix=args.s3_prefix,
+                total_collections=args.total_collections,
+                page_size=args.batch_size
+            )
+
+            print(f"\n✓ Created {len(concept_ids)} collection directories in S3")
+            print(f"  Location: s3://{args.s3_bucket}/{args.s3_prefix}/")
+
+        elif args.lithops_process:
+            # Process phase: process all collections
+            print(f"Processing collections using Lithops")
+            print(f"S3 bucket: {args.s3_bucket}")
+            print(f"S3 prefix: {args.s3_prefix}\n")
+
+            results = process_all_collections(
+                bucket=args.s3_bucket,
+                prefix=args.s3_prefix,
+                access_type=args.access_type
+            )
+
+            completed = sum(1 for r in results if r.get('status') == 'completed')
+            failed = sum(1 for r in results if r.get('status') == 'failed')
+
+            print(f"\n✓ Processing complete!")
+            print(f"  Total: {len(results)} collections")
+            print(f"  Completed: {completed}")
+            print(f"  Failed: {failed}")
+
+        elif args.lithops_reprocess:
+            # Reprocess only unprocessed collections
+            print(f"Finding unprocessed collections in S3 bucket: {args.s3_bucket}")
+
+            unprocessed = get_unprocessed_collections(
+                bucket=args.s3_bucket,
+                prefix=args.s3_prefix
+            )
+
+            if not unprocessed:
+                print("✓ All collections have been processed!")
+                return
+
+            print(f"\nFound {len(unprocessed)} unprocessed collections")
+            print("Processing them now...\n")
+
+            results = process_all_collections(
+                bucket=args.s3_bucket,
+                prefix=args.s3_prefix,
+                access_type=args.access_type,
+                collection_ids=unprocessed
+            )
+
+            completed = sum(1 for r in results if r.get('status') == 'completed')
+            failed = sum(1 for r in results if r.get('status') == 'failed')
+
+            print(f"\n✓ Reprocessing complete!")
+            print(f"  Total: {len(results)} collections")
+            print(f"  Completed: {completed}")
+            print(f"  Failed: {failed}")
+
+        elif args.lithops_download:
+            # Download results from S3
+            print(f"Downloading results from S3 bucket: {args.s3_bucket}")
+
+            download_results_from_s3(
+                bucket=args.s3_bucket,
+                prefix=args.s3_prefix,
+                output_file=args.output_file
+            )
+
+            print(f"\n✓ Results downloaded to: {args.output_file}")
+
+        else:
+            print("Error: When using --lithops, you must specify one of:")
+            print("  --lithops-setup      Create collection directories in S3")
+            print("  --lithops-process    Process all collections")
+            print("  --lithops-reprocess  Reprocess unprocessed collections")
+            print("  --lithops-download   Download results from S3")
+
+    # Handle collection mode (non-Lithops)
+    elif args.parallel:
         # Use parallel processing mode
         process_collections_parallel(
             auth=auth,
