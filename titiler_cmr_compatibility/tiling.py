@@ -268,7 +268,8 @@ class GranuleTilingInfo:
                 self.variable = self.data_variables[0]
             self.reader_options = {
                 "variable": self.variable,
-                "opener": xarray_open_dataset
+                "opener": xarray_open_dataset,
+                "decode_times": False,
             }
 
     def generate_tiles_url_for_granule(
