@@ -22,6 +22,8 @@ from .tiling import GranuleTilingInfo, IncompatibilityReason
 ssm = boto3.client('ssm', region_name='us-west-2')
 logger = logging.getLogger(__name__)
 
+import os
+os.environ['AWS_MAX_POOL_CONNECTIONS'] = '100'
 
 def write_collection_id_to_s3(
     page_info: Dict[str, Any],
@@ -79,7 +81,7 @@ def write_collection_id_to_s3(
 
 
 def process_collection_to_s3(
-    collection_info: Dict[str, Any],
+    concept_id: str,
     bucket: str,
     prefix: str = "collections",
     access_type: str = "direct"
@@ -98,12 +100,11 @@ def process_collection_to_s3(
     Returns:
         Dict with processing status and collection_concept_id
     """
-    concept_id = collection_info['concept_id']
     logger.info(f"Processing collection {concept_id}")
 
     # Authenticate with earthaccess
     try:
-        auth = earthaccess.login()
+        auth = earthaccess.login(strategy="environment")
     except Exception as e:
         logger.error(f"Failed to authenticate: {e}")
         auth = None
@@ -156,10 +157,15 @@ def process_collection_to_s3(
             ginfo.error_message = str(e)
             ginfo.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED
 
-    # Write results to S3 as JSON
+    # Write results to S3 as JSON with status and reason in the path
     result_dict = ginfo.to_report_dict()
     s3_client = boto3.client('s3')
-    key = f"{prefix}/{concept_id}/result.json"
+
+    # Encode tiling status and incompatibility reason in the S3 key
+    tiling_status = "true" if ginfo.tiling_compatible else "false"
+    incompatibility_reason = ginfo.incompatible_reason.value if ginfo.incompatible_reason else "none"
+
+    key = f"{prefix}/{concept_id}/status={tiling_status}/reason={incompatibility_reason}/result.json"
 
     try:
         s3_client.put_object(
@@ -215,14 +221,14 @@ def create_collection_directories(
 
     # Create page info for each page
     page_infos = [
-        {'page_num': page_num, 'page_size': page_size}
+        {'page_info': {'page_num': page_num, 'page_size': page_size}}
         for page_num in range(1, num_pages + 1)
     ]
 
     # Use Lithops to process pages in parallel
     with FunctionExecutor(config=lithops_config) as fexec:
         futures = fexec.map(
-            lambda page_info: write_collection_id_to_s3(page_info, bucket, prefix),
+            lambda page_info: write_collection_id_to_s3(page_info=page_info, bucket=bucket, prefix=prefix),
             page_infos
         )
         results = fexec.get_result(futures)
@@ -271,30 +277,32 @@ def process_all_collections(
 
         logger.info(f"Found {len(collection_ids)} collections to process")
 
-    # Create collection info dicts
-    collection_infos = [{'concept_id': concept_id} for concept_id in collection_ids]
-
     username = ssm.get_parameter(
-        Name='/earthdata/username',
+        Name='/earthdata-aimeeb/username',
         WithDecryption=True
     )['Parameter']['Value']
 
     password = ssm.get_parameter(
-        Name='/earthdata/password', 
+        Name='/earthdata-aimeeb/password', 
         WithDecryption=True
     )['Parameter']['Value']
 
     # Use Lithops to process collections in parallel
     with FunctionExecutor(
         config=lithops_config,
-        runtime_env_vars={
+        extra_env={
             'EARTHDATA_USERNAME': username,
             'EARTHDATA_PASSWORD': password
         }
     ) as fexec:
         futures = fexec.map(
-            lambda info: process_collection_to_s3(info, bucket, prefix, access_type),
-            collection_infos
+            lambda concept_id: process_collection_to_s3(
+                concept_id=concept_id,
+                bucket=bucket,
+                prefix=prefix,
+                access_type=access_type
+            ),
+            collection_ids
         )
         results = fexec.get_result(futures)
 
@@ -322,15 +330,122 @@ def get_unprocessed_collections(bucket: str, prefix: str = "collections") -> Lis
         for common_prefix in page.get('CommonPrefixes', []):
             concept_id = common_prefix['Prefix'].rstrip('/').split('/')[-1]
 
-            # Check if result.json exists
-            result_key = f"{prefix}/{concept_id}/result.json"
-            try:
-                s3_client.head_object(Bucket=bucket, Key=result_key)
-            except s3_client.exceptions.ClientError:
-                # result.json doesn't exist
+            # Check if any status directory exists (indicating processed)
+            status_prefix = f"{prefix}/{concept_id}/status="
+            found_result = False
+            for status_page in s3_client.get_paginator('list_objects_v2').paginate(
+                Bucket=bucket, Prefix=status_prefix, MaxKeys=1
+            ):
+                if status_page.get('Contents'):
+                    found_result = True
+                    break
+
+            if not found_result:
                 unprocessed.append(concept_id)
 
     return unprocessed
+
+
+def get_collections_by_status(
+    bucket: str,
+    prefix: str = "collections",
+    tiling_compatible: Optional[bool] = None,
+    incompatibility_reason: Optional[str] = None
+) -> List[str]:
+    """
+    Get list of collection IDs filtered by tiling status and/or incompatibility reason.
+
+    Uses S3 prefix filtering to efficiently query without reading file contents.
+
+    Args:
+        bucket: S3 bucket name
+        prefix: S3 prefix for collection directories
+        tiling_compatible: Filter by tiling compatibility (True/False/None for all)
+        incompatibility_reason: Filter by specific incompatibility reason
+                               (e.g., "unsupported_format", "tile_generation_failed")
+
+    Returns:
+        List of collection concept IDs matching the filter criteria
+
+    Examples:
+        # Get all failed collections
+        get_collections_by_status(bucket, tiling_compatible=False)
+
+        # Get all collections that failed due to unsupported format
+        get_collections_by_status(bucket, tiling_compatible=False,
+                                 incompatibility_reason="unsupported_format")
+
+        # Get all successful collections
+        get_collections_by_status(bucket, tiling_compatible=True)
+    """
+    s3_client = boto3.client('s3')
+    matching_collections = []
+
+    # Build the S3 prefix based on filters
+    if tiling_compatible is not None:
+        status_str = "true" if tiling_compatible else "false"
+
+        if incompatibility_reason is not None:
+            # Filter by both status and reason
+            search_prefix = f"{prefix}/"
+            paginator = s3_client.get_paginator('list_objects_v2')
+
+            for page in paginator.paginate(Bucket=bucket, Prefix=search_prefix):
+                for obj in page.get('Contents', []):
+                    key = obj['Key']
+                    # Match pattern: prefix/CONCEPT_ID/status=STATUS/reason=REASON/result.json
+                    if f"/status={status_str}/reason={incompatibility_reason}/result.json" in key:
+                        # Extract concept_id from the key
+                        parts = key.split('/')
+                        if len(parts) >= 4:
+                            concept_id = parts[1]  # Assuming prefix/CONCEPT_ID/status=/...
+                            matching_collections.append(concept_id)
+        else:
+            # Filter by status only
+            search_prefix = f"{prefix}/"
+            paginator = s3_client.get_paginator('list_objects_v2')
+
+            for page in paginator.paginate(Bucket=bucket, Prefix=search_prefix):
+                for obj in page.get('Contents', []):
+                    key = obj['Key']
+                    # Match pattern: prefix/CONCEPT_ID/status=STATUS/reason=*/result.json
+                    if f"/status={status_str}/" in key and key.endswith('/result.json'):
+                        parts = key.split('/')
+                        if len(parts) >= 4:
+                            concept_id = parts[1]
+                            if concept_id not in matching_collections:
+                                matching_collections.append(concept_id)
+    else:
+        # No status filter, just incompatibility reason
+        if incompatibility_reason is not None:
+            search_prefix = f"{prefix}/"
+            paginator = s3_client.get_paginator('list_objects_v2')
+
+            for page in paginator.paginate(Bucket=bucket, Prefix=search_prefix):
+                for obj in page.get('Contents', []):
+                    key = obj['Key']
+                    if f"/reason={incompatibility_reason}/result.json" in key:
+                        parts = key.split('/')
+                        if len(parts) >= 4:
+                            concept_id = parts[1]
+                            matching_collections.append(concept_id)
+        else:
+            # No filters - return all processed collections
+            search_prefix = f"{prefix}/"
+            paginator = s3_client.get_paginator('list_objects_v2')
+
+            for page in paginator.paginate(Bucket=bucket, Prefix=search_prefix):
+                for obj in page.get('Contents', []):
+                    key = obj['Key']
+                    if key.endswith('/result.json'):
+                        parts = key.split('/')
+                        if len(parts) >= 4:
+                            concept_id = parts[1]
+                            if concept_id not in matching_collections:
+                                matching_collections.append(concept_id)
+
+    logger.info(f"Found {len(matching_collections)} collections matching filter criteria")
+    return matching_collections
 
 
 def download_results_from_s3(
@@ -364,7 +479,10 @@ def download_results_from_s3(
                     logger.error(f"Error downloading {obj['Key']}: {e}")
 
     # Write combined results
-    with open(output_file, 'w') as f:
-        json.dump(all_results, f, indent=2)
+    import pandas as pd
+    df = pd.DataFrame(all_results)
 
-    logger.info(f"Downloaded {len(all_results)} results to {output_file}")
+    # Write the DataFrame to a Parquet file
+    df.to_parquet(output_file, index=False) # index=False to avoid writing the DataFrame index
+
+    print(f"Data successfully written to {output_file}")

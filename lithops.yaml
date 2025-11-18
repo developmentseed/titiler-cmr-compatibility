@@ -11,9 +11,6 @@ aws_lambda:
     runtime_timeout: 900
     # Lithops will create the execution role automatically if you don't specify one
     # Or you can specify an existing role:
-    execution_role: arn:aws:iam::552819999234:role/lithops-execution-role
-
-aws_s3:
-    # Lithops will use the region specified in the aws section above
-    # You can optionally specify a storage bucket:
-    storage_bucket: aimeeb-lithops
+    execution_role: arn:aws:iam::853558080719:role/lithops-execution-role
+    max_workers: 100  # Adjust based on your needs
+    worker_processes: 1

@@ -47,7 +47,7 @@ aws ssm put-parameter \
 # Store your Earthdata password
 aws ssm put-parameter \
   --name "/earthdata/password" \
-  --value YOUR_EARTHDATA_PASSWORD \
+  --value 'YOUR_EARTHDATA_PASSWORD' \
   --type "SecureString"
 ```
 
@@ -66,26 +66,18 @@ aws:
     region: us-west-2  # Change to your preferred region
 
 aws_lambda:
-    runtime: python3.12
+    runtime: tcr-runtime:latest
     runtime_memory: 10240
     runtime_timeout: 900
     # Lithops will create the execution role automatically if not specified
     # Or you can specify an existing role:
     # execution_role: arn:aws:iam::YOUR_ACCOUNT_ID:role/lithops-execution-role
 
-    # Environment variables for Lambda functions
-    # These will be injected into the Lambda environment
-    env_vars:
-        EARTHDATA_USERNAME: "{{ssm:/earthdata/username}}"
-        EARTHDATA_PASSWORD: "{{ssm:/earthdata/password}}"
-
 aws_s3:
     # Lithops will use the region specified in the aws section above
     # You can optionally specify a storage bucket:
     # storage_bucket: your-bucket-name
 ```
-
-**Note:** The `{{ssm:...}}` syntax tells AWS Lambda to automatically fetch the values from Parameter Store at runtime.
 
 **That's it!** Lithops will automatically create the necessary Lambda execution role when you run it for the first time.
 
@@ -127,7 +119,7 @@ aws iam put-role-policy \
         "ssm:GetParameter",
         "ssm:GetParameters"
       ],
-      "Resource": "arn:aws:ssm:*:*:parameter/earthdata/*"
+      "Resource": "arn:aws:ssm:*:*:parameter/earthdata-aimeeb/*"
     }]
   }'
 ```
@@ -156,7 +148,7 @@ This will run a simple "Hello World" function on AWS Lambda to verify your setup
 ### 5. Create an S3 bucket for tracking collection processing
 
 ```bash
-aws s3 mb s3://aimeeb-veda
+aws s3 mb s3://veda-odd-scratch
 ```
 
 Choose a unique bucket name. This bucket will store the collection directories and processing results.
@@ -171,9 +163,9 @@ This phase fetches all collection metadata from CMR and creates S3 directories f
 python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-setup \
-  --s3-bucket aimeeb-veda \
+  --s3-bucket veda-odd-scratch \
   --s3-prefix titiler-cmr-compatibility/collections \
-  --total-collections 1000 \
+  --total-collections 10800 \
   --batch-size 100
 ```
 
@@ -198,8 +190,8 @@ This phase processes all collections using Lithops. Each collection is processed
 python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-process \
-  --s3-bucket your-bucket-name \
-  --s3-prefix collections \
+  --s3-bucket veda-odd-scratch \
+  --s3-prefix titiler-cmr-compatibility/collections \
   --access-type direct
 ```
 
@@ -221,8 +213,8 @@ If some collections failed or timed out, you can reprocess only the unprocessed 
 python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-reprocess \
-  --s3-bucket your-bucket-name \
-  --s3-prefix collections \
+  --s3-bucket veda-odd-scratch \
+  --s3-prefix titiler-cmr-compatibility/collections \
   --access-type direct
 ```
 
@@ -241,9 +233,8 @@ Once all collections are processed, download the results and compile them into a
 python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-download \
-  --s3-bucket your-bucket-name \
-  --s3-prefix collections \
-  --output-file tiling_results.json
+  --s3-bucket veda-odd-scratch \
+  --s3-prefix titiler-cmr-compatibility/collections
 ```
 
 This will create a single JSON file containing all collection results.
@@ -257,7 +248,14 @@ You can monitor progress by checking the S3 bucket:
 aws s3 ls s3://your-bucket-name/collections/ | wc -l
 
 # Count processed collections (those with result.json)
-aws s3 ls s3://your-bucket-name/collections/ --recursive | grep result.json | wc -l
+aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/ --recursive | grep result.json | wc -l
+```
+
+Remove all results:
+
+```
+aws s3 rm s3://veda-odd-scratch/titiler-cmr-compatibility/collections/ --recursive --exclude "*" --include "*/result.json" --dryrun
+aws s3 rm s3://veda-odd-scratch/titiler-cmr-compatibility/collections/ --recursive --exclude "*" --include "*/result.json"
 ```
 
 You can also check Lithops logs:

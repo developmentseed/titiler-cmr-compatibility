@@ -7,6 +7,7 @@ CMR collections and generating tiles URLs for granules.
 
 import argparse
 import logging
+import yaml
 
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -25,6 +26,7 @@ from .lithops_processing import (
     create_collection_directories,
     process_all_collections,
     get_unprocessed_collections,
+    get_collections_by_status,
     download_results_from_s3
 )
 
@@ -411,6 +413,12 @@ def main():
         help='Use Lithops for distributed processing'
     )
     parser.add_argument(
+        '--lithops-config-file',
+        type=str,
+        default='lithops.yaml',
+        help='Config file to pass to lithops functions.'
+    )    
+    parser.add_argument(
         '--s3-bucket',
         type=str,
         help='S3 bucket name for Lithops processing (required with --lithops)'
@@ -435,6 +443,28 @@ def main():
         '--lithops-reprocess',
         action='store_true',
         help='Reprocess only unprocessed collections (use with --lithops)'
+    )
+    parser.add_argument(
+        '--lithops-reprocess-reason',
+        type=str,
+        help='Reprocess collections that failed with specific incompatibility reason (use with --lithops). '
+             'Example values: unsupported_format, tile_generation_failed, cant_open_file, no_xy_dimensions'
+    )
+    parser.add_argument(
+        '--lithops-query',
+        action='store_true',
+        help='Query and list collections by status/reason (use with --lithops, --tiling-compatible, --incompatibility-reason)'
+    )
+    parser.add_argument(
+        '--tiling-compatible',
+        type=str,
+        choices=['true', 'false'],
+        help='Filter by tiling compatibility status (use with --lithops-query)'
+    )
+    parser.add_argument(
+        '--incompatibility-reason',
+        type=str,
+        help='Filter by incompatibility reason (use with --lithops-query or --lithops-reprocess-reason)'
     )
     parser.add_argument(
         '--lithops-download',
@@ -469,6 +499,9 @@ def main():
             print("Error: --s3-bucket is required when using --lithops")
             return
 
+        with open(args.lithops_config_file) as f:
+            lithops_config = yaml.safe_load(f)            
+
         if args.lithops_setup:
             # Setup phase: create collection directories in S3
             print(f"Creating collection directories in S3 bucket: {args.s3_bucket}")
@@ -478,7 +511,8 @@ def main():
                 bucket=args.s3_bucket,
                 prefix=args.s3_prefix,
                 total_collections=args.total_collections,
-                page_size=args.batch_size
+                page_size=args.batch_size,
+                lithops_config=lithops_config
             )
 
             print(f"\n✓ Created {len(concept_ids)} collection directories in S3")
@@ -493,7 +527,8 @@ def main():
             results = process_all_collections(
                 bucket=args.s3_bucket,
                 prefix=args.s3_prefix,
-                access_type=args.access_type
+                access_type=args.access_type,
+                lithops_config=lithops_config
             )
 
             completed = sum(1 for r in results if r.get('status') == 'completed')
@@ -524,7 +559,8 @@ def main():
                 bucket=args.s3_bucket,
                 prefix=args.s3_prefix,
                 access_type=args.access_type,
-                collection_ids=unprocessed
+                collection_ids=unprocessed,
+                lithops_config=lithops_config
             )
 
             completed = sum(1 for r in results if r.get('status') == 'completed')
@@ -534,6 +570,69 @@ def main():
             print(f"  Total: {len(results)} collections")
             print(f"  Completed: {completed}")
             print(f"  Failed: {failed}")
+
+        elif args.lithops_reprocess_reason:
+            # Reprocess collections that failed with specific incompatibility reason
+            reason = args.incompatibility_reason or args.lithops_reprocess_reason
+            print(f"Finding collections with incompatibility reason '{reason}' in S3 bucket: {args.s3_bucket}")
+
+            collections_to_reprocess = get_collections_by_status(
+                bucket=args.s3_bucket,
+                prefix=args.s3_prefix,
+                tiling_compatible=False,
+                incompatibility_reason=reason
+            )
+
+            if not collections_to_reprocess:
+                print(f"✓ No collections found with incompatibility reason '{reason}'")
+                return
+
+            print(f"\nFound {len(collections_to_reprocess)} collections with reason '{reason}'")
+            print("Reprocessing them now...\n")
+
+            results = process_all_collections(
+                bucket=args.s3_bucket,
+                prefix=args.s3_prefix,
+                access_type=args.access_type,
+                collection_ids=collections_to_reprocess,
+                lithops_config=lithops_config
+            )
+
+            completed = sum(1 for r in results if r.get('status') == 'completed')
+            failed = sum(1 for r in results if r.get('status') == 'failed')
+
+            print(f"\n✓ Reprocessing complete!")
+            print(f"  Total: {len(results)} collections")
+            print(f"  Completed: {completed}")
+            print(f"  Failed: {failed}")
+
+        elif args.lithops_query:
+            # Query collections by status/reason
+            tiling_compatible = None
+            if args.tiling_compatible:
+                tiling_compatible = args.tiling_compatible == 'true'
+
+            print(f"Querying collections in S3 bucket: {args.s3_bucket}")
+            if tiling_compatible is not None:
+                status_str = "successful" if tiling_compatible else "failed"
+                print(f"  Filter: tiling_compatible={status_str}")
+            if args.incompatibility_reason:
+                print(f"  Filter: incompatibility_reason={args.incompatibility_reason}")
+
+            matching_collections = get_collections_by_status(
+                bucket=args.s3_bucket,
+                prefix=args.s3_prefix,
+                tiling_compatible=tiling_compatible,
+                incompatibility_reason=args.incompatibility_reason
+            )
+
+            print(f"\n✓ Found {len(matching_collections)} matching collections")
+            if matching_collections:
+                print("\nCollection IDs:")
+                for concept_id in matching_collections[:20]:  # Show first 20
+                    print(f"  - {concept_id}")
+                if len(matching_collections) > 20:
+                    print(f"  ... and {len(matching_collections) - 20} more")
 
         elif args.lithops_download:
             # Download results from S3
@@ -549,10 +648,12 @@ def main():
 
         else:
             print("Error: When using --lithops, you must specify one of:")
-            print("  --lithops-setup      Create collection directories in S3")
-            print("  --lithops-process    Process all collections")
-            print("  --lithops-reprocess  Reprocess unprocessed collections")
-            print("  --lithops-download   Download results from S3")
+            print("  --lithops-setup                Create collection directories in S3")
+            print("  --lithops-process              Process all collections")
+            print("  --lithops-reprocess            Reprocess unprocessed collections")
+            print("  --lithops-reprocess-reason     Reprocess collections by incompatibility reason")
+            print("  --lithops-query                Query collections by status/reason")
+            print("  --lithops-download             Download results from S3")
 
     # Handle collection mode (non-Lithops)
     elif args.parallel:
