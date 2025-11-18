@@ -38,7 +38,7 @@ class IncompatibilityReason(str, Enum):
     CANT_OPEN_FILE = "cant_open_file"
     TILE_GENERATION_FAILED = "tile_generation_failed"
     NO_GRANULE_FOUND = "no_granule_found"
-    FAILED_TO_EXTRACT = "failed_to_extract"
+    FAILED_TO_EXTRACT_URL = "failed_to_extract_url"
     TIMEOUT = "timeout"
     CANT_EXTRACT_VARIABLES = "cant_extract_variables"
     GROUP_STRUCTURE = "group_structure"
@@ -136,17 +136,11 @@ class GranuleTilingInfo:
                     data_links = self.data_granule.data_links(access="external")
                     if data_links:
                         self.data_url = data_links[0]
-
-            if not self.data_url:
-                error_msg = "Could not find data URL in granule metadata"
-                logger.error(error_msg)
-                self.error_message = error_msg
-                self.incompatible_reason = IncompatibilityReason.FAILED_TO_EXTRACT
         except Exception as e:
             error_msg = f"Error extracting data URL: {e}"
             logger.error(error_msg)
             self.error_message = error_msg
-            self.incompatible_reason = IncompatibilityReason.FAILED_TO_EXTRACT
+            self.incompatible_reason = IncompatibilityReason.FAILED_TO_EXTRACT_URL
 
     def _extract_temporal_extent(self):
         """Extract temporal extent from granule metadata."""
