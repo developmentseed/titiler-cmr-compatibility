@@ -4,12 +4,17 @@ This document describes how to use the Lithops-based distributed processing work
 
 ## Overview
 
-The Lithops workflow consists of four phases:
+The Lithops workflow consists of three simple phases:
 
-1. **Setup**: Create S3 directories for all collections to track processing state
-2. **Process**: Process all collections in parallel using Lithops
-3. **Reprocess**: Reprocess only the collections that failed or were not completed
-4. **Download**: Download all results from S3 and compile into a single file
+1. **Setup**: Fetch all collection IDs from CMR and store them in `unprocessed/` directory
+2. **Process**: Process all collections in `unprocessed/`, move them to `processed/` when done. Run repeatedly until all are processed.
+3. **Download**: Download all results from `processed/` and compile into a single file
+
+The workflow uses two S3 directories to track state:
+- `unprocessed/`: Collections waiting to be processed
+- `processed/`: Collections that have been successfully processed
+
+This eliminates expensive S3 listing operations and makes it trivial to resume processing.
 
 ## Prerequisites
 
@@ -155,9 +160,9 @@ Choose a unique bucket name. This bucket will store the collection directories a
 
 ## Usage
 
-### Phase 1: Setup - Create Collection Directories
+### Phase 1: Setup - Create Unprocessed Collection Markers
 
-This phase fetches all collection metadata from CMR and creates S3 directories for each collection. Each directory serves as a tracking mechanism - if a directory contains a `result.json` file, the collection has been processed.
+This phase fetches all collection IDs from CMR and creates markers in the `unprocessed/` directory. Collections remain in `unprocessed/` until they are successfully processed.
 
 ```bash
 python -m titiler_cmr_compatibility.cli \
@@ -175,16 +180,21 @@ Options:
 - `--total-collections`: Total number of collections to process (optional, defaults to all)
 - `--batch-size`: Number of collections to fetch per page (default: 100)
 
-This will create directories like:
+This will create markers like:
+
 ```
-s3://your-bucket-name/collections/C1234567890-PROVIDER/.marker
-s3://your-bucket-name/collections/C0987654321-PROVIDER/.marker
+s3://your-bucket-name/collections/unprocessed/C1234567890-PROVIDER/.marker
+s3://your-bucket-name/collections/unprocessed/C0987654321-PROVIDER/.marker
 ...
 ```
 
 ### Phase 2: Process Collections
 
-This phase processes all collections using Lithops. Each collection is processed independently, and results are written to S3 as JSON files.
+This phase processes all collections in `unprocessed/`. For each successful processing:
+1. Result is written to `processed/CONCEPT_ID/status=.../reason=.../result.json`
+2. Collection is removed from `unprocessed/`
+
+Simply run this command repeatedly until all collections are processed:
 
 ```bash
 python -m titiler_cmr_compatibility.cli \
@@ -198,34 +208,32 @@ python -m titiler_cmr_compatibility.cli \
 Options:
 - `--access-type`: Access type for granules (`direct` for S3 links, `external` for HTTPS) (default: `direct`)
 
-For each collection, this will create:
+Each run processes whatever is left in `unprocessed/`. If a Lambda times out or fails, that collection stays in `unprocessed/` and will be retried next time.
+
+Results are stored like:
 ```
-s3://your-bucket-name/collections/C1234567890-PROVIDER/result.json
+s3://your-bucket-name/collections/processed/C1234567890-PROVIDER/status=true/reason=none/result.json
+s3://your-bucket-name/collections/processed/C0987654321-PROVIDER/status=false/reason=unsupported_format/result.json
 ```
 
-The `result.json` file contains the `GranuleTilingInfo.to_report_dict()` output for that collection.
+### Check Processing Status
 
-### Phase 3: Reprocess Failed Collections
-
-If some collections failed or timed out, you can reprocess only the unprocessed collections:
+To see how many collections have been processed:
 
 ```bash
 python -m titiler_cmr_compatibility.cli \
   --lithops \
-  --lithops-reprocess \
+  --lithops-status \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections \
-  --access-type direct
+  --s3-prefix titiler-cmr-compatibility/collections
 ```
 
-This command:
-1. Scans S3 to find all collection directories without `result.json` files
-2. Reprocesses only those collections
-3. Writes results to S3
+This shows:
+- Total collections
+- Processed count and percentage
+- Unprocessed count and percentage
 
-You can run this command multiple times until all collections are processed.
-
-### Phase 4: Download Results
+### Phase 3: Download Results
 
 Once all collections are processed, download the results and compile them into a single file:
 
@@ -241,63 +249,59 @@ This will create a single JSON file containing all collection results.
 
 ## Monitoring Progress
 
-You can monitor progress by checking the S3 bucket:
+Use the built-in status command:
 
 ```bash
-# Count total collections
-aws s3 ls s3://your-bucket-name/collections/ | wc -l
-
-# Count processed collections (those with result.json)
-aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/ --recursive | grep result.json | wc -l
+python -m titiler_cmr_compatibility.cli \
+  --lithops \
+  --lithops-status \
+  --s3-bucket veda-odd-scratch \
+  --s3-prefix titiler-cmr-compatibility/collections
 ```
 
-Remove all results:
+Or check S3 directly:
 
-```
-aws s3 rm s3://veda-odd-scratch/titiler-cmr-compatibility/collections/ --recursive --exclude "*" --include "*/result.json" --dryrun
-aws s3 rm s3://veda-odd-scratch/titiler-cmr-compatibility/collections/ --recursive --exclude "*" --include "*/result.json"
+```bash
+# Count unprocessed collections
+aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/unprocessed/ | wc -l
+
+# Count processed collections
+aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/processed/ | wc -l
 ```
 
-You can also check Lithops logs:
+Check Lithops logs:
 ```bash
 # View Lithops logs
 lithops logs
 ```
 
-## Advantages Over Multiprocessing
-
-1. **Fault Tolerance**: If one collection fails, only that one job fails - not the entire batch
-2. **Resumable**: You can easily reprocess failed collections without redoing successful ones
-3. **Scalability**: Lithops can scale to thousands of parallel executions using AWS Lambda
-4. **State Tracking**: S3 directories provide clear visibility into processing state
-5. **No CPU Contention**: Each collection runs in its own isolated environment
-6. **No Timeouts**: Collections that take a long time to process won't affect others
-
 ## Troubleshooting
 
-### Collection Processing Fails
+### Finding Problematic Collections
 
-Check the specific collection directory in S3. If there's no `result.json`, the collection failed. You can:
+If processing keeps failing, find which collections are causing issues:
 
-1. Run `--lithops-reprocess` to retry all failed collections
-2. Process a specific collection manually using:
-   ```bash
-   python -m titiler_cmr_compatibility.cli \
-     --collection-id C1234567890-PROVIDER
-   ```
-
-### Lithops Configuration Issues
-
-Check your Lithops configuration:
 ```bash
-lithops test
+# List first 20 unprocessed collections (ordered alphabetically)
+aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/unprocessed/ | head -20
 ```
 
-### AWS Permissions Issues
+These are likely the ones causing OOM or other errors. You can:
 
-Ensure your AWS credentials have permissions for:
-- S3: `s3:GetObject`, `s3:PutObject`, `s3:ListBucket`
-- Lambda: `lambda:CreateFunction`, `lambda:InvokeFunction`, `lambda:GetFunction`
+1. Process a specific collection manually to investigate:
+
+```bash
+python -m titiler_cmr_compatibility.cli \
+  --collection-id C1234567890-PROVIDER
+```
+
+2. Skip problematic collections by manually moving them:
+
+```bash
+# Move to a "skipped" directory for later investigation
+aws s3 mv s3://veda-odd-scratch/titiler-cmr-compatibility/collections/unprocessed/C1234567890-PROVIDER/ \
+        s3://veda-odd-scratch/titiler-cmr-compatibility/collections/skipped/C1234567890-PROVIDER/ --recursive
+```
 
 ## Cost Considerations
 
@@ -305,33 +309,3 @@ Ensure your AWS credentials have permissions for:
 - **S3**: Charges for storage and requests
 - **Example**: Processing 10,000 collections with 1GB Lambda for 30s each ≈ 83 Lambda GB-hours ≈ $1.40
 
-To reduce costs:
-- Use smaller Lambda memory if possible
-- Clean up S3 results after downloading
-- Use S3 lifecycle policies to archive old results
-
-## Example Complete Workflow
-
-```bash
-# 1. Setup: Create collection directories
-python -m titiler_cmr_compatibility.cli \
-  --lithops --lithops-setup \
-  --s3-bucket my-bucket \
-  --total-collections 1000
-
-# 2. Process: Process all collections
-python -m titiler_cmr_compatibility.cli \
-  --lithops --lithops-process \
-  --s3-bucket my-bucket
-
-# 3. Reprocess: Retry any failures (can run multiple times)
-python -m titiler_cmr_compatibility.cli \
-  --lithops --lithops-reprocess \
-  --s3-bucket my-bucket
-
-# 4. Download: Get all results
-python -m titiler_cmr_compatibility.cli \
-  --lithops --lithops-download \
-  --s3-bucket my-bucket \
-  --output-file results.json
-```

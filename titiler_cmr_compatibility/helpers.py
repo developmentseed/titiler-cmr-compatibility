@@ -76,7 +76,7 @@ def open_xarray_dataset(url, data_center_name):
         logger.error(f"Timeout opening xarray dataset from {url}")
         raise
     except Exception as e:
-        logger.error(f"Error opening xarray dataset from {url}: {e}")
+        logger.error(f"Error opening xarray dataset: {e}")
         raise
 
 @with_timeout(seconds=120)
@@ -149,5 +149,5 @@ def open_rasterio_dataset(url, data_center_name):
         logger.error(f"Timeout opening rasterio dataset from {url}")
         raise
     except Exception as e:
-        logger.error(f"Error opening rasterio dataset from {url}: {e}")
+        logger.error(f"Error opening rasterio dataset: {e}")
         raise

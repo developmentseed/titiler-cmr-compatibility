@@ -31,7 +31,7 @@ def write_collection_id_to_s3(
     prefix: str = "collections"
 ) -> List[str]:
     """
-    Fetch a page of collections and write their concept IDs as S3 directories.
+    Fetch a page of collections and write their concept IDs to unprocessed directory.
 
     This function is designed to be called by Lithops in parallel across pages.
 
@@ -62,8 +62,8 @@ def write_collection_id_to_s3(
         if not concept_id:
             continue
 
-        # Create a "directory" in S3 by writing a marker object
-        key = f"{prefix}/{concept_id}/.marker"
+        # Write to unprocessed directory
+        key = f"{prefix}/unprocessed/{concept_id}/.marker"
 
         try:
             s3_client.put_object(
@@ -73,9 +73,9 @@ def write_collection_id_to_s3(
                 Metadata={'status': 'pending'}
             )
             created_ids.append(concept_id)
-            logger.info(f"Created S3 directory for collection {concept_id}")
+            logger.info(f"Created unprocessed marker for collection {concept_id}")
         except Exception as e:
-            logger.error(f"Error creating S3 directory for {concept_id}: {e}")
+            logger.error(f"Error creating marker for {concept_id}: {e}")
 
     return created_ids
 
@@ -87,12 +87,12 @@ def process_collection_to_s3(
     access_type: str = "direct"
 ) -> Dict[str, Any]:
     """
-    Process a single collection and write results to S3.
+    Process a single collection, write results to processed/, and remove from unprocessed/.
 
     This function is designed to be called by Lithops for each collection.
 
     Args:
-        collection_info: Dict with 'concept_id' key
+        concept_id: Collection concept ID
         bucket: S3 bucket name
         prefix: S3 prefix for collection directories
         access_type: Access type for granules ("direct" or "external")
@@ -101,6 +101,7 @@ def process_collection_to_s3(
         Dict with processing status and collection_concept_id
     """
     logger.info(f"Processing collection {concept_id}")
+    s3_client = boto3.client('s3')
 
     # Authenticate with earthaccess
     try:
@@ -157,24 +158,33 @@ def process_collection_to_s3(
             ginfo.error_message = str(e)
             ginfo.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED
 
-    # Write results to S3 as JSON with status and reason in the path
+    # Write results to S3 in processed directory with status and reason in the path
     result_dict = ginfo.to_report_dict()
-    s3_client = boto3.client('s3')
 
     # Encode tiling status and incompatibility reason in the S3 key
     tiling_status = "true" if ginfo.tiling_compatible else "false"
     incompatibility_reason = ginfo.incompatible_reason.value if ginfo.incompatible_reason else "none"
 
-    key = f"{prefix}/{concept_id}/status={tiling_status}/reason={incompatibility_reason}/result.json"
+    key = f"{prefix}/processed/{concept_id}/status={tiling_status}/reason={incompatibility_reason}/result.json"
 
     try:
+        # Write result to processed directory
         s3_client.put_object(
             Bucket=bucket,
             Key=key,
             Body=json.dumps(result_dict, indent=2),
             ContentType='application/json'
         )
-        logger.info(f"Wrote results for collection {concept_id} to S3")
+        logger.info(f"Wrote results for collection {concept_id} to processed/")
+
+        # Delete from unprocessed directory
+        unprocessed_key = f"{prefix}/unprocessed/{concept_id}/.marker"
+        try:
+            s3_client.delete_object(Bucket=bucket, Key=unprocessed_key)
+            logger.info(f"Removed {concept_id} from unprocessed/")
+        except Exception as delete_error:
+            logger.warning(f"Failed to delete unprocessed marker for {concept_id}: {delete_error}")
+
         return {
             'collection_concept_id': concept_id,
             'status': 'completed',
@@ -244,38 +254,38 @@ def process_all_collections(
     bucket: str,
     prefix: str = "collections",
     access_type: str = "direct",
-    lithops_config: Optional[Dict[str, Any]] = None,
-    collection_ids: Optional[List[str]] = None
+    lithops_config: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Process all collections using Lithops and write results to S3.
+    Process all unprocessed collections using Lithops and move them to processed/.
 
     Args:
         bucket: S3 bucket name
         prefix: S3 prefix for collection directories
         access_type: Access type for granules ("direct" or "external")
         lithops_config: Optional Lithops configuration dict
-        collection_ids: Optional list of specific collection IDs to process.
-                       If None, will fetch all collection IDs from S3.
 
     Returns:
         List of processing status dicts for each collection
     """
-    # Get collection IDs from S3 if not provided
-    if collection_ids is None:
-        s3_client = boto3.client('s3')
-        logger.info(f"Listing collection directories from s3://{bucket}/{prefix}/")
+    # Get collection IDs from unprocessed/ directory
+    s3_client = boto3.client('s3')
+    logger.info(f"Listing unprocessed collections from s3://{bucket}/{prefix}/unprocessed/")
 
-        paginator = s3_client.get_paginator('list_objects_v2')
-        collection_ids = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    collection_ids = []
 
-        for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/", Delimiter='/'):
-            for common_prefix in page.get('CommonPrefixes', []):
-                # Extract collection ID from prefix (e.g., "collections/C123/" -> "C123")
-                dir_name = common_prefix['Prefix'].rstrip('/').split('/')[-1]
-                collection_ids.append(dir_name)
+    for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/unprocessed/", Delimiter='/'):
+        for common_prefix in page.get('CommonPrefixes', []):
+            # Extract collection ID from prefix (e.g., "collections/unprocessed/C123/" -> "C123")
+            dir_name = common_prefix['Prefix'].rstrip('/').split('/')[-1]
+            collection_ids.append(dir_name)
 
-        logger.info(f"Found {len(collection_ids)} collections to process")
+    logger.info(f"Found {len(collection_ids)} unprocessed collections to process")
+
+    if not collection_ids:
+        logger.info("No unprocessed collections found")
+        return []
 
     username = ssm.get_parameter(
         Name='/earthdata-aimeeb/username',
@@ -283,7 +293,7 @@ def process_all_collections(
     )['Parameter']['Value']
 
     password = ssm.get_parameter(
-        Name='/earthdata-aimeeb/password', 
+        Name='/earthdata-aimeeb/password',
         WithDecryption=True
     )['Parameter']['Value']
 
@@ -309,41 +319,46 @@ def process_all_collections(
     return results
 
 
-def get_unprocessed_collections(bucket: str, prefix: str = "collections") -> List[str]:
+def count_unprocessed_collections(bucket: str, prefix: str = "collections") -> int:
     """
-    Get list of collection IDs that haven't been processed yet (no result.json).
+    Count the number of unprocessed collections.
 
     Args:
         bucket: S3 bucket name
         prefix: S3 prefix for collection directories
 
     Returns:
-        List of unprocessed collection concept IDs
+        Number of unprocessed collections
     """
     s3_client = boto3.client('s3')
-    unprocessed = []
-
-    # List all collection directories
     paginator = s3_client.get_paginator('list_objects_v2')
+    count = 0
 
-    for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/", Delimiter='/'):
-        for common_prefix in page.get('CommonPrefixes', []):
-            concept_id = common_prefix['Prefix'].rstrip('/').split('/')[-1]
+    for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/unprocessed/", Delimiter='/'):
+        count += len(page.get('CommonPrefixes', []))
 
-            # Check if any status directory exists (indicating processed)
-            status_prefix = f"{prefix}/{concept_id}/status="
-            found_result = False
-            for status_page in s3_client.get_paginator('list_objects_v2').paginate(
-                Bucket=bucket, Prefix=status_prefix, MaxKeys=1
-            ):
-                if status_page.get('Contents'):
-                    found_result = True
-                    break
+    return count
 
-            if not found_result:
-                unprocessed.append(concept_id)
 
-    return unprocessed
+def count_processed_collections(bucket: str, prefix: str = "collections") -> int:
+    """
+    Count the number of processed collections.
+
+    Args:
+        bucket: S3 bucket name
+        prefix: S3 prefix for collection directories
+
+    Returns:
+        Number of processed collections
+    """
+    s3_client = boto3.client('s3')
+    paginator = s3_client.get_paginator('list_objects_v2')
+    count = 0
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/processed/", Delimiter='/'):
+        count += len(page.get('CommonPrefixes', []))
+
+    return count
 
 
 def get_collections_by_status(
@@ -387,38 +402,38 @@ def get_collections_by_status(
 
         if incompatibility_reason is not None:
             # Filter by both status and reason
-            search_prefix = f"{prefix}/"
+            search_prefix = f"{prefix}/processed/"
             paginator = s3_client.get_paginator('list_objects_v2')
 
             for page in paginator.paginate(Bucket=bucket, Prefix=search_prefix):
                 for obj in page.get('Contents', []):
                     key = obj['Key']
-                    # Match pattern: prefix/CONCEPT_ID/status=STATUS/reason=REASON/result.json
+                    # Match pattern: prefix/processed/CONCEPT_ID/status=STATUS/reason=REASON/result.json
                     if f"/status={status_str}/reason={incompatibility_reason}/result.json" in key:
                         # Extract concept_id from the key
                         parts = key.split('/')
                         if len(parts) >= 4:
-                            concept_id = parts[1]  # Assuming prefix/CONCEPT_ID/status=/...
+                            concept_id = parts[2]  # prefix/processed/CONCEPT_ID/status=/...
                             matching_collections.append(concept_id)
         else:
             # Filter by status only
-            search_prefix = f"{prefix}/"
+            search_prefix = f"{prefix}/processed/"
             paginator = s3_client.get_paginator('list_objects_v2')
 
             for page in paginator.paginate(Bucket=bucket, Prefix=search_prefix):
                 for obj in page.get('Contents', []):
                     key = obj['Key']
-                    # Match pattern: prefix/CONCEPT_ID/status=STATUS/reason=*/result.json
+                    # Match pattern: prefix/processed/CONCEPT_ID/status=STATUS/reason=*/result.json
                     if f"/status={status_str}/" in key and key.endswith('/result.json'):
                         parts = key.split('/')
                         if len(parts) >= 4:
-                            concept_id = parts[1]
+                            concept_id = parts[2]
                             if concept_id not in matching_collections:
                                 matching_collections.append(concept_id)
     else:
         # No status filter, just incompatibility reason
         if incompatibility_reason is not None:
-            search_prefix = f"{prefix}/"
+            search_prefix = f"{prefix}/processed/"
             paginator = s3_client.get_paginator('list_objects_v2')
 
             for page in paginator.paginate(Bucket=bucket, Prefix=search_prefix):
@@ -427,11 +442,11 @@ def get_collections_by_status(
                     if f"/reason={incompatibility_reason}/result.json" in key:
                         parts = key.split('/')
                         if len(parts) >= 4:
-                            concept_id = parts[1]
+                            concept_id = parts[2]
                             matching_collections.append(concept_id)
         else:
             # No filters - return all processed collections
-            search_prefix = f"{prefix}/"
+            search_prefix = f"{prefix}/processed/"
             paginator = s3_client.get_paginator('list_objects_v2')
 
             for page in paginator.paginate(Bucket=bucket, Prefix=search_prefix):
@@ -440,7 +455,7 @@ def get_collections_by_status(
                     if key.endswith('/result.json'):
                         parts = key.split('/')
                         if len(parts) >= 4:
-                            concept_id = parts[1]
+                            concept_id = parts[2]
                             if concept_id not in matching_collections:
                                 matching_collections.append(concept_id)
 
@@ -454,7 +469,7 @@ def download_results_from_s3(
     output_file: str = "tiling_results.json"
 ) -> None:
     """
-    Download all results from S3 and compile into a single file.
+    Download all processed results from S3 and compile into a single file.
 
     Args:
         bucket: S3 bucket name
@@ -464,10 +479,10 @@ def download_results_from_s3(
     s3_client = boto3.client('s3')
     all_results = []
 
-    # List all result.json files
+    # List all result.json files in processed directory
     paginator = s3_client.get_paginator('list_objects_v2')
 
-    for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/"):
+    for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/processed/"):
         for obj in page.get('Contents', []):
             if obj['Key'].endswith('result.json'):
                 # Download and parse result

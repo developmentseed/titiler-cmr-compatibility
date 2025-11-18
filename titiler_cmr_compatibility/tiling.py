@@ -250,7 +250,7 @@ class GranuleTilingInfo:
                     self.incompatible_reason = IncompatibilityReason.CANT_EXTRACT_VARIABLES
 
         except Exception as e:
-            error_msg = f"Error opening {self.data_url}: {e}"
+            error_msg = f"Error opening: {e}"
             logger.error(error_msg)
             self.error_message = error_msg
             self.incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
@@ -310,21 +310,14 @@ class GranuleTilingInfo:
                 (item for item in self.data_variables if item in known_variables),
                 None
             )
-            if self.temporal_extent:
-                datetime_param = '/'.join(self.temporal_extent)
-                if variable:
-                    return f"{base_url}&variable={variable}&datetime={datetime_param}"
-                elif isinstance(self.data_variables, list):
-                    return f"{base_url}&variable={self.data_variables[0]}&datetime={datetime_param}"
+            if variable:
+                return f"{base_url}&variable={variable}"
+            elif isinstance(self.data_variables, list) and len(self.data_variables) >= 1:
+                return f"{base_url}&variable={self.data_variables[0]}"
             else:
-                if not variable:
-                    logger.warning(
-                        f"No known variable found for xarray backend in granule {self.concept_id}"
-                    )
-                if not self.temporal_extent:
-                    logger.warning(
-                        f"No temporal extent found for granule {self.concept_id}"
-                    )
+                logger.warning(
+                    f"No variable found for xarray backend in granule {self.concept_id}"
+                )
                 return None
 
         return None

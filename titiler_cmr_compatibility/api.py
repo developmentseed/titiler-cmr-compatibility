@@ -114,7 +114,7 @@ def fetch_random_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
             return None
 
         # CMR has a 1 million item pagination limit
-        params["offset"] = random.randint(0, min(total_num_granules, int(1e6)))
+        params["offset"] = random.randint(0, min(total_num_granules - 1, int(1e6)))
 
         # Second request to fetch the random granule
         response = requests.get(
