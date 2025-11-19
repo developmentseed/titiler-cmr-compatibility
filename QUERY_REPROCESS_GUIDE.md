@@ -76,7 +76,8 @@ Reprocess all collections that failed with a specific reason:
 python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-reprocess-reason tile_generation_failed \
-  --s3-bucket your-bucket \
+  --s3-bucket veda-odd-scratch \
+  --s3-prefix titiler-cmr-compatibility/collections \
   --lithops-config-file lithops.yaml
 ```
 
@@ -87,7 +88,7 @@ Reprocess collections that haven't been processed yet:
 ```bash
 python -m titiler_cmr_compatibility.cli \
   --lithops \
-  --lithops-reprocess \
+  --lithops-process \
   --s3-bucket your-bucket \
   --lithops-config-file lithops.yaml
 ```

@@ -28,7 +28,8 @@ from .lithops_processing import (
     count_unprocessed_collections,
     count_processed_collections,
     get_collections_by_status,
-    download_results_from_s3
+    download_results_from_s3,
+    reprocess_collections_by_reason
 )
 
 # Configure logging
@@ -466,6 +467,11 @@ def main():
         action='store_true',
         help='Download all results from S3 (use with --lithops)'
     )
+    parser.add_argument(
+        '--lithops-reprocess-reason',
+        type=str,
+        help='Reprocess collections that failed with a specific incompatibility reason (use with --lithops)'
+    )
     args = parser.parse_args()
 
     # Configure logging level
@@ -603,13 +609,52 @@ def main():
 
             print(f"\n✓ Results downloaded to: {args.output_file}")
 
+        elif args.lithops_reprocess_reason:
+            # Reprocess collections that failed with a specific reason
+            print(f"Reprocessing collections that failed with reason: {args.lithops_reprocess_reason}")
+            print(f"S3 bucket: {args.s3_bucket}")
+            print(f"S3 prefix: {args.s3_prefix}\n")
+
+            results = reprocess_collections_by_reason(
+                bucket=args.s3_bucket,
+                prefix=args.s3_prefix,
+                incompatibility_reason=args.lithops_reprocess_reason,
+                access_type=args.access_type,
+                lithops_config=lithops_config
+            )
+
+            if not results:
+                print(f"\nNo collections found with reason: {args.lithops_reprocess_reason}")
+            else:
+                completed = sum(1 for r in results if r.get('status') == 'completed')
+                failed = sum(1 for r in results if r.get('status') == 'failed')
+
+                print(f"\n✓ Reprocessing complete!")
+                print(f"  Total: {len(results)} collections reprocessed")
+                print(f"  Completed: {completed}")
+                print(f"  Failed: {failed}")
+
+                # Show some examples of updated collections
+                if completed > 0:
+                    print(f"\nUpdated collections (showing first 5):")
+                    count = 0
+                    for r in results:
+                        if r.get('status') == 'completed':
+                            print(f"  - {r.get('collection_concept_id')}")
+                            count += 1
+                            if count >= 5:
+                                break
+                    if completed > 5:
+                        print(f"  ... and {completed - 5} more")
+
         else:
             print("Error: When using --lithops, you must specify one of:")
-            print("  --lithops-setup      Create collection directories in S3 (unprocessed/)")
-            print("  --lithops-process    Process all unprocessed collections")
-            print("  --lithops-status     Show processing status")
-            print("  --lithops-query      Query collections by status/reason")
-            print("  --lithops-download   Download results from S3")
+            print("  --lithops-setup                Create collection directories in S3 (unprocessed/)")
+            print("  --lithops-process              Process all unprocessed collections")
+            print("  --lithops-status               Show processing status")
+            print("  --lithops-query                Query collections by status/reason")
+            print("  --lithops-download             Download results from S3")
+            print("  --lithops-reprocess-reason     Reprocess collections by incompatibility reason")
 
     # Handle collection mode (non-Lithops)
     elif args.parallel:

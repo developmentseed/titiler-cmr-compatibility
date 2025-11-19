@@ -314,7 +314,7 @@ def process_all_collections(
             ),
             collection_ids
         )
-        results = fexec.get_result(futures, throw_except=False)
+        results = fexec.get_result(futures) #, throw_except=False)
 
     return results
 
@@ -413,7 +413,7 @@ def get_collections_by_status(
                         # Extract concept_id from the key
                         parts = key.split('/')
                         if len(parts) >= 4:
-                            concept_id = parts[2]  # prefix/processed/CONCEPT_ID/status=/...
+                            concept_id = parts[3]  # prefix/processed/CONCEPT_ID/status=/...
                             matching_collections.append(concept_id)
         else:
             # Filter by status only
@@ -427,7 +427,7 @@ def get_collections_by_status(
                     if f"/status={status_str}/" in key and key.endswith('/result.json'):
                         parts = key.split('/')
                         if len(parts) >= 4:
-                            concept_id = parts[2]
+                            concept_id = parts[3]
                             if concept_id not in matching_collections:
                                 matching_collections.append(concept_id)
     else:
@@ -442,7 +442,7 @@ def get_collections_by_status(
                     if f"/reason={incompatibility_reason}/result.json" in key:
                         parts = key.split('/')
                         if len(parts) >= 4:
-                            concept_id = parts[2]
+                            concept_id = parts[3]
                             matching_collections.append(concept_id)
         else:
             # No filters - return all processed collections
@@ -455,12 +455,118 @@ def get_collections_by_status(
                     if key.endswith('/result.json'):
                         parts = key.split('/')
                         if len(parts) >= 4:
-                            concept_id = parts[2]
+                            concept_id = parts[3]
                             if concept_id not in matching_collections:
                                 matching_collections.append(concept_id)
 
     logger.info(f"Found {len(matching_collections)} collections matching filter criteria")
     return matching_collections
+
+
+def reprocess_collections_by_reason(
+    bucket: str,
+    prefix: str = "collections",
+    incompatibility_reason: str = None,
+    access_type: str = "direct",
+    lithops_config: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Reprocess collections that failed with a specific incompatibility reason.
+
+    This function:
+    1. Discovers collections that failed with the given reason using S3 directory structure
+    2. Reprocesses them using Lithops
+    3. Updates result.json in the correct new location
+    4. Removes obsolete directory information (old status/reason paths)
+
+    Args:
+        bucket: S3 bucket name
+        prefix: S3 prefix for collection directories
+        incompatibility_reason: The incompatibility reason to reprocess
+        access_type: Access type for granules ("direct" or "external")
+        lithops_config: Optional Lithops configuration dict
+
+    Returns:
+        List of processing status dicts for each reprocessed collection
+    """
+    logger.info(f"Finding collections with incompatibility reason: {incompatibility_reason}")
+
+    # Get collections that failed with the specified reason
+    collection_ids = get_collections_by_status(
+        bucket=bucket,
+        prefix=prefix,
+        tiling_compatible=False,
+        incompatibility_reason=incompatibility_reason
+    )
+
+    if not collection_ids:
+        logger.info(f"No collections found with reason: {incompatibility_reason}")
+        return []
+
+    logger.info(f"Found {len(collection_ids)} collections to reprocess")
+
+    # Get SSM parameters for authentication
+    username = ssm.get_parameter(
+        Name='/earthdata-aimeeb/username',
+        WithDecryption=True
+    )['Parameter']['Value']
+
+    password = ssm.get_parameter(
+        Name='/earthdata-aimeeb/password',
+        WithDecryption=True
+    )['Parameter']['Value']
+
+    # Helper function to reprocess a single collection and clean up old paths
+    def reprocess_and_cleanup(concept_id: str) -> Dict[str, Any]:
+        """Reprocess a collection and clean up old result paths."""
+        s3_client = boto3.client('s3')
+
+        # First, find and delete the old result.json
+        old_key_prefix = f"{prefix}/processed/{concept_id}/"
+        try:
+            paginator = s3_client.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=bucket, Prefix=old_key_prefix):
+                for obj in page.get('Contents', []):
+                    if obj['Key'].endswith('result.json'):
+                        # Delete the old result.json
+                        logger.info(f"Deleting old result: {obj['Key']}")
+                        s3_client.delete_object(Bucket=bucket, Key=obj['Key'])
+
+                        # Also try to clean up the parent directories if empty
+                        # Extract the directory path (everything before result.json)
+                        old_dir_parts = obj['Key'].rsplit('/', 1)[0]
+                        # Try to delete status= and reason= directories (S3 will fail if not empty, which is fine)
+                        for part in ['', '/..', '/../..']:
+                            try:
+                                cleanup_key = old_dir_parts + part + '/'
+                                s3_client.delete_object(Bucket=bucket, Key=cleanup_key)
+                            except:
+                                pass  # Ignore errors, directories might not be empty or might not exist
+        except Exception as e:
+            logger.warning(f"Error cleaning up old results for {concept_id}: {e}")
+
+        # Now reprocess the collection
+        result = process_collection_to_s3(
+            concept_id=concept_id,
+            bucket=bucket,
+            prefix=prefix,
+            access_type=access_type
+        )
+
+        return result
+
+    # Use Lithops to reprocess collections in parallel
+    with FunctionExecutor(
+        config=lithops_config,
+        extra_env={
+            'EARTHDATA_USERNAME': username,
+            'EARTHDATA_PASSWORD': password
+        }
+    ) as fexec:
+        futures = fexec.map(reprocess_and_cleanup, collection_ids)
+        results = fexec.get_result(futures)
+
+    return results
 
 
 def download_results_from_s3(
