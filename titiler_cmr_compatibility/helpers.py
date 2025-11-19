@@ -45,7 +45,7 @@ def with_timeout(seconds=60):
         return wrapper
     return decorator
 
-@retry(wait=wait_fixed(1), stop=(stop_after_attempt(3)))
+@retry(wait=wait_fixed(2), stop=(stop_after_attempt(5)))
 def _get_s3fs_session_with_retries(daac: str):
     return earthaccess.get_s3fs_session(daac=daac)
 
