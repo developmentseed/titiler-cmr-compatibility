@@ -92,7 +92,7 @@ def _process_single_collection(
         ginfo = extract_random_granule_info(collection=collection, access_type=access_type)
     except Exception as e:
         logger.error(f"[Worker {idx}] Error extracting granule info {collection_concept_id}: {e}", exc_info=True)
-        return _minimal_ginfo(collection_concept_id, str(e), IncompatibilityReason.FAILED_TO_EXTRACT).to_report_dict()
+        return _minimal_ginfo(collection_concept_id, str(e), IncompatibilityReason.FAILED_TO_EXTRACT_URL).to_report_dict()
 
     if ginfo is None:
         error_message = f"[Worker {idx}] No granule info returned for {collection_concept_id}"

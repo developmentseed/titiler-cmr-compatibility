@@ -23,7 +23,7 @@ This structure allows efficient filtering using S3 prefix queries **without read
 - `cant_open_file` - Error opening the file
 - `tile_generation_failed` - Tiling failed for unknown reason
 - `no_granule_found` - No granule found in collection
-- `failed_to_extract` - Failed to extract metadata
+- `failed_to_extract_url` - Failed to extract metadata
 - `timeout` - Processing timed out
 - `cant_extract_variables` - Could not extract data variables
 - `group_structure` - File has group structure (hierarchical)

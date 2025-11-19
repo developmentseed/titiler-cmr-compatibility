@@ -139,7 +139,7 @@ def process_collection_to_s3(
         ginfo = GranuleTilingInfo(
             collection_concept_id=concept_id,
             error_message=str(e),
-            incompatible_reason=IncompatibilityReason.FAILED_TO_EXTRACT
+            incompatible_reason=IncompatibilityReason.FAILED_TO_EXTRACT_URL
         )
 
     if ginfo is None:
@@ -314,7 +314,7 @@ def process_all_collections(
             ),
             collection_ids
         )
-        results = fexec.get_result(futures)
+        results = fexec.get_result(futures, throw_except=False)
 
     return results
 

@@ -133,6 +133,7 @@ class GranuleTilingInfo:
                 # Fall back to "external" if "direct" returns nothing
                 if self.access_type == "direct":
                     logger.warning(f"No direct access links found for granule {self.concept_id}, trying external")
+                    self.access_type = "external"
                     data_links = self.data_granule.data_links(access="external")
                     if data_links:
                         self.data_url = data_links[0]
@@ -345,7 +346,8 @@ class GranuleTilingInfo:
             "tile_x": tile_x,
             "tile_y": tile_y,
             "tile_z": tile_z,
-            "cmr_query": cmr_query
+            "cmr_query": cmr_query,
+            "access_type": self.access_type
         }
 
         try:

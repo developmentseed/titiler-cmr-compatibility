@@ -233,6 +233,17 @@ This shows:
 - Processed count and percentage
 - Unprocessed count and percentage
 
+
+Or check S3 directly:
+
+```bash
+# Count unprocessed collections
+aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/unprocessed/ | wc -l
+
+# Count processed collections
+aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/processed/ | wc -l
+```
+
 ### Phase 3: Download Results
 
 Once all collections are processed, download the results and compile them into a single file:
@@ -247,35 +258,14 @@ python -m titiler_cmr_compatibility.cli \
 
 This will create a single JSON file containing all collection results.
 
-## Monitoring Progress
+## Troubleshooting
 
-Use the built-in status command:
+### Check Lithops logs:
 
-```bash
-python -m titiler_cmr_compatibility.cli \
-  --lithops \
-  --lithops-status \
-  --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections
-```
-
-Or check S3 directly:
-
-```bash
-# Count unprocessed collections
-aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/unprocessed/ | wc -l
-
-# Count processed collections
-aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/processed/ | wc -l
-```
-
-Check Lithops logs:
 ```bash
 # View Lithops logs
 lithops logs
 ```
-
-## Troubleshooting
 
 ### Finding Problematic Collections
 
