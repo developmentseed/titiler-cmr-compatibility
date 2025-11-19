@@ -314,7 +314,7 @@ def process_all_collections(
             ),
             collection_ids
         )
-        results = fexec.get_result(futures) #, throw_except=False)
+        results = fexec.get_result(futures, throw_except=False)
 
     return results
 
@@ -564,7 +564,7 @@ def reprocess_collections_by_reason(
         }
     ) as fexec:
         futures = fexec.map(reprocess_and_cleanup, collection_ids)
-        results = fexec.get_result(futures)
+        results = fexec.get_result(futures, throw_except=False)
 
     return results
 
