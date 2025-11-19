@@ -1,4 +1,6 @@
 known_variables = [
+  "palette",
+  "Temperature",
   "Var_PRECLS",
   "QLML",
   "SSDP001",

@@ -71,10 +71,10 @@ def open_xarray_dataset(url, data_center_name):
     try:
         if scheme in ("http", "https"):
             fs = earthaccess.get_fsspec_https_session()
-            return xr.open_dataset(fs.open(url), decode_times=False)
+            return xr.open_dataset(fs.open(url), engine="h5netcdf", decode_times=False)
         elif scheme == "s3":
             s3 = _get_s3fs_session_with_retries(daac=data_center_name)
-            return xr.open_dataset(s3.open(url, "rb"), decode_times=False)
+            return xr.open_dataset(s3.open(url, "rb"), engine="h5netcdf", decode_times=False)
         else:
             raise ValueError(f"Unsupported URL scheme: {scheme}")
     except TimeoutError:
