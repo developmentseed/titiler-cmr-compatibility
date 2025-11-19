@@ -99,7 +99,6 @@ def _process_single_collection(
         error_message = f"[Worker {idx}] No granule info returned for {collection_concept_id}"
         logger.warning(error_message)
         return _minimal_ginfo(collection_concept_id, error_message, IncompatibilityReason.NO_GRANULE_FOUND).to_report_dict()
-
     try:
         if print_collection_info:
             ginfo = _print_and_test(ginfo, auth)
