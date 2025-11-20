@@ -253,6 +253,8 @@ class GranuleTilingInfo:
                 'is not the signature of a valid netCDF4 file': IncompatibilityReason.UNSUPPORTED_FORMAT,
                 'Cannot seek streaming HTTP file': IncompatibilityReason.UNSUPPORTED_FORMAT,
                 'Forbidden': IncompatibilityReason.FORBIDDEN,
+                'Operation timed out': IncompatibilityReason.TIMEOUT,
+                'Unauthorized': IncompatibilityReason.FORBIDDEN
             }
 
             self.incompatible_reason = next(
