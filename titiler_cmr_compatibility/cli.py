@@ -625,8 +625,8 @@ def main():
             if not results:
                 print(f"\nNo collections found with reason: {args.lithops_reprocess_reason}")
             else:
-                completed = sum(1 for r in results if r.get('status') == 'completed')
-                failed = sum(1 for r in results if r.get('status') == 'failed')
+                completed = sum(1 for r in results if r and r.get('status') == 'completed')
+                failed = sum(1 for r in results if r and r.get('status') == 'failed')
 
                 print(f"\n✓ Reprocessing complete!")
                 print(f"  Total: {len(results)} collections reprocessed")

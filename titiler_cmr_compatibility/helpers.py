@@ -68,6 +68,9 @@ def open_xarray_dataset(url, data_center_name):
     logger.info(f"Opening xarray dataset from {url}")
     scheme = urlparse(url).scheme.lower()
 
+    # we use engine h5netcdf because there are no zarr stores currently catalogued and using 
+    # this specific engine helps surface the "not a valid signature for netCDF-4" error, as opposed to the
+    # "no engine found" error.
     try:
         if scheme in ("http", "https"):
             fs = earthaccess.get_fsspec_https_session()

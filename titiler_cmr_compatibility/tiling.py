@@ -43,6 +43,7 @@ class IncompatibilityReason(str, Enum):
     CANT_EXTRACT_VARIABLES = "cant_extract_variables"
     GROUP_STRUCTURE = "group_structure"
     NO_XY_DIMENSIONS = "no_xy_dimensions"
+    FORBIDDEN = "forbidden"
 
 
 @dataclass
@@ -248,7 +249,12 @@ class GranuleTilingInfo:
             error_msg = f"Error opening: {e}"
             logger.error(error_msg)
             self.error_message = error_msg
-            self.incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
+            if 'is not the signature of a valid netCDF4 file' in error_msg or 'Cannot seek streaming HTTP file' in error_msg:
+                self.incompatible_reason = IncompatibilityReason.UNSUPPORTED_FORMAT
+            if 'Forbidden' in error_msg:
+                self.incompatible_reason = IncompatibilityReason.FORBIDDEN
+            else:
+                self.incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
 
     def _setup_reader(self):
         """Setup the appropriate reader and reader options based on backend."""
