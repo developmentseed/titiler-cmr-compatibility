@@ -4,3 +4,4 @@ tenacity
 xarray>=2024.10.0
 lithops
 boto3
+numcodecs==0.16.3
