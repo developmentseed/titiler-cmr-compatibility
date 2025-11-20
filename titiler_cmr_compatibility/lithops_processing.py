@@ -6,6 +6,7 @@ and S3-based state tracking. Collections are processed independently,
 with results written to S3 directories for tracking.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import logging
 from typing import Dict, Any, Optional, List
@@ -14,6 +15,7 @@ from pathlib import Path
 import boto3
 import earthaccess
 from lithops import FunctionExecutor
+import pandas as pd
 
 from .api import fetch_cmr_collections, fetch_granule_by_id
 from .metadata import extract_random_granule_info
@@ -585,22 +587,33 @@ def download_results_from_s3(
     s3_client = boto3.client('s3')
     all_results = []
 
-    # List all result.json files in processed directory
-    paginator = s3_client.get_paginator('list_objects_v2')
+    def _download_and_parse(bucket, key):
+        """Download and parse a single result file"""
+        try:
+            response = s3_client.get_object(Bucket=bucket, Key=key)
+            return json.loads(response['Body'].read())
+        except Exception as e:
+            logger.error(f"Error downloading {key}: {e}")
+            return None
 
+    # List all result.json files in processed directory
+    keys_to_download = []
+    paginator = s3_client.get_paginator('list_objects_v2')
     for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/processed/"):
         for obj in page.get('Contents', []):
             if obj['Key'].endswith('result.json'):
-                # Download and parse result
-                try:
-                    response = s3_client.get_object(Bucket=bucket, Key=obj['Key'])
-                    result = json.loads(response['Body'].read())
-                    all_results.append(result)
-                except Exception as e:
-                    logger.error(f"Error downloading {obj['Key']}: {e}")
+                keys_to_download.append(obj['Key'])
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(_download_and_parse, bucket, key): key 
+                for key in keys_to_download}
+        
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                all_results.append(result)
 
     # Write combined results
-    import pandas as pd
     df = pd.DataFrame(all_results)
 
     # Write the DataFrame to a Parquet file

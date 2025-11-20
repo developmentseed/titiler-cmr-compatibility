@@ -249,7 +249,7 @@ class GranuleTilingInfo:
             error_msg = f"Error opening: {e}"
             logger.error(error_msg)
             self.error_message = error_msg
-            if 'is not the signature of a valid netCDF4 file' in error_msg or 'Cannot seek streaming HTTP file' in error_msg:
+            if ('is not the signature of a valid netCDF4 file' in error_msg) or ('Cannot seek streaming HTTP file' in error_msg):
                 self.incompatible_reason = IncompatibilityReason.UNSUPPORTED_FORMAT
             if 'Forbidden' in error_msg:
                 self.incompatible_reason = IncompatibilityReason.FORBIDDEN

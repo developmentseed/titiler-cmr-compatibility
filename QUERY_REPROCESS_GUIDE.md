@@ -77,7 +77,7 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-reprocess-reason tile_generation_failed \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections \
+  --s3-prefix titiler-cmr-compatibility/collections-11-20 \
   --lithops-config-file lithops.yaml
 ```
 

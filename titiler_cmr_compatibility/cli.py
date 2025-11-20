@@ -531,8 +531,8 @@ def main():
                 lithops_config=lithops_config
             )
 
-            completed = sum(1 for r in results if r.get('status') == 'completed')
-            failed = sum(1 for r in results if r.get('status') == 'failed')
+            completed = sum(1 for r in results if r and r.get('status') == 'completed')
+            failed = sum(1 for r in results if r and r.get('status') == 'failed')
 
             print(f"\n✓ Processing complete!")
             print(f"  Total: {len(results)} collections processed")

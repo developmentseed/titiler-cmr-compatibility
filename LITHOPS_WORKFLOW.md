@@ -169,7 +169,7 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-setup \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections \
+  --s3-prefix titiler-cmr-compatibility/collections-11-20 \
   --total-collections 10800 \
   --batch-size 100
 ```
@@ -201,7 +201,7 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-process \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections \
+  --s3-prefix titiler-cmr-compatibility/collections-11-20 \
   --access-type direct
 ```
 

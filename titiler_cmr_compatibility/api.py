@@ -43,7 +43,7 @@ def fetch_cmr_collections(
         "has_granules": True,
         "sort_key[]": "-usage_score",
         # subset collections to those which are identifiably from a DAAC https://cmr.earthdata.nasa.gov/search/providers
-        "provider[]": (",").join(get_eosdis_shortnames())
+        "provider[]": get_eosdis_shortnames()
     }
 
     # Add concept_id parameter if provided for debugging
