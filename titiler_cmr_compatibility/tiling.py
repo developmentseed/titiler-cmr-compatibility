@@ -249,12 +249,16 @@ class GranuleTilingInfo:
             error_msg = f"Error opening: {e}"
             logger.error(error_msg)
             self.error_message = error_msg
-            if ('is not the signature of a valid netCDF4 file' in error_msg) or ('Cannot seek streaming HTTP file' in error_msg):
-                self.incompatible_reason = IncompatibilityReason.UNSUPPORTED_FORMAT
-            if 'Forbidden' in error_msg:
-                self.incompatible_reason = IncompatibilityReason.FORBIDDEN
-            else:
-                self.incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
+            error_mappings = {
+                'is not the signature of a valid netCDF4 file': IncompatibilityReason.UNSUPPORTED_FORMAT,
+                'Cannot seek streaming HTTP file': IncompatibilityReason.UNSUPPORTED_FORMAT,
+                'Forbidden': IncompatibilityReason.FORBIDDEN,
+            }
+
+            self.incompatible_reason = next(
+                (reason for phrase, reason in error_mappings.items() if phrase in error_msg),
+                IncompatibilityReason.CANT_OPEN_FILE  # default
+            )
 
     def _setup_reader(self):
         """Setup the appropriate reader and reader options based on backend."""
@@ -380,6 +384,7 @@ class GranuleTilingInfo:
                 self.incompatible_reason = IncompatibilityReason.NO_XY_DIMENSIONS
             else:
                 self.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED
+                raise
 
             return False
 

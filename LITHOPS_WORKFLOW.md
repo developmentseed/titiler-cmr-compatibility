@@ -253,7 +253,7 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-download \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections
+  --s3-prefix titiler-cmr-compatibility/collections-11-20
 ```
 
 This will create a single JSON file containing all collection results.

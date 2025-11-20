@@ -153,12 +153,7 @@ def process_collection_to_s3(
 
     # Test tiling if we have a tiles URL
     if ginfo.tiles_url:
-        try:
-            ginfo.test_tiling(auth)
-        except Exception as e:
-            logger.error(f"Error testing tile generation for {concept_id}: {e}")
-            ginfo.error_message = str(e)
-            ginfo.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED
+        ginfo.test_tiling(auth)
 
     # Write results to S3 in processed directory with status and reason in the path
     result_dict = ginfo.to_report_dict()
@@ -566,7 +561,7 @@ def reprocess_collections_by_reason(
         }
     ) as fexec:
         futures = fexec.map(reprocess_and_cleanup, collection_ids)
-        results = fexec.get_result(futures, throw_except=False)
+        results = fexec.get_result(futures)#, throw_except=False)
 
     return results
 

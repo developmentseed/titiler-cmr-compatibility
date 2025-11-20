@@ -279,6 +279,7 @@ known_variables = [
   "ReceivedPower",
   "lo2hi_v_surf14",
   "sea_surface_skin_temperature_stddev",
+  "sea_water_temperature_00",
   "water_current_direction_mean",
   "hi2lo_look_vector",
   "AMF_above_aircraft",
