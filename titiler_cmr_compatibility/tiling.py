@@ -44,6 +44,7 @@ class IncompatibilityReason(str, Enum):
     GROUP_STRUCTURE = "group_structure"
     NO_XY_DIMENSIONS = "no_xy_dimensions"
     FORBIDDEN = "forbidden"
+    GROUP_NOT_ALIGNED_WITH_PARENTS = "group_not_aligned_with_parents"
 
 
 @dataclass
@@ -254,7 +255,8 @@ class GranuleTilingInfo:
                 'Cannot seek streaming HTTP file': IncompatibilityReason.UNSUPPORTED_FORMAT,
                 'Forbidden': IncompatibilityReason.FORBIDDEN,
                 'Operation timed out': IncompatibilityReason.TIMEOUT,
-                'Unauthorized': IncompatibilityReason.FORBIDDEN
+                'Unauthorized': IncompatibilityReason.FORBIDDEN,
+                'is not aligned with its parents': IncompatibilityReason.GROUP_NOT_ALIGNED_WITH_PARENTS
             }
 
             self.incompatible_reason = next(
