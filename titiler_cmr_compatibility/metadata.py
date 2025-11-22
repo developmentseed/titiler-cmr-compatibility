@@ -38,6 +38,7 @@ def extract_granule_tiling_info(
     granule: Dict[str, Any],
     collection_file_format: Optional[str] = None,
     collection_data_center: Optional[str] = None,
+    collection_short_name_and_version: Optional[str] = None,
     access_type: str = "direct",
     num_granules: Optional[int] = None,
     processing_level: Optional[str] = None
@@ -82,6 +83,7 @@ def extract_granule_tiling_info(
         granule_metadata=granule,
         collection_concept_id=collection_concept_id,
         collection_file_format=collection_file_format,
+        collection_short_name_and_version=collection_short_name_and_version,
         access_type=access_type,
         data_center_short_name=data_center_short_name,
         num_granules=num_granules,
@@ -151,7 +153,10 @@ def extract_processing_level(collection: Dict[str, Any]) -> str:
     processing_level_id = processing_level.get("Id", None)
     return processing_level_id
 
-def extract_random_granule_info(collection: Dict[str, Any], access_type: Optional[str] = "direct") -> Optional[GranuleTilingInfo]:
+def extract_random_granule_info(
+    collection: Dict[str, Any],
+    access_type: Optional[str] = "direct"
+) -> Optional[GranuleTilingInfo]:
     """
     Extract tiling information for a random granule from a collection.
 
@@ -162,7 +167,10 @@ def extract_random_granule_info(collection: Dict[str, Any], access_type: Optiona
         GranuleTilingInfo for a random granule or None if unable to process
     """
     meta = collection.get("meta", {})
-    concept_id = meta.get("concept-id", "Unknown")
+    collection_concept_id = meta.get("concept-id", "Unknown")
+    short_name = collection.get("umm", {}).get("ShortName", None)
+    version = collection.get("umm", {}).get("Version", None)
+    short_name_and_version = f"{short_name}.{version}"    
 
     # Extract collection-level metadata
     collection_file_format = extract_collection_file_format(collection)
@@ -170,15 +178,17 @@ def extract_random_granule_info(collection: Dict[str, Any], access_type: Optiona
     processing_level = extract_processing_level(collection)
 
     # Fetch and process random granule
-    granule, num_granules = fetch_random_granule_metadata(concept_id)
+    granule, num_granules = fetch_random_granule_metadata(collection_concept_id)
     if not granule:
-        logger.warning(f"No granule found for collection {concept_id}")
+        logger.warning(f"No granule found for collection {collection_concept_id}")
         return None
 
     return extract_granule_tiling_info(
         granule=granule,
+        collection_concept_id=collection_concept_id,
         collection_file_format=collection_file_format,
         collection_data_center=collection_data_center,
+        collection_short_name_and_version=short_name_and_version,
         access_type=access_type,
         num_granules=num_granules,
         processing_level=processing_level

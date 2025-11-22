@@ -45,6 +45,7 @@ class IncompatibilityReason(str, Enum):
     NO_XY_DIMENSIONS = "no_xy_dimensions"
     FORBIDDEN = "forbidden"
     GROUP_NOT_ALIGNED_WITH_PARENTS = "group_not_aligned_with_parents"
+    DECODE_ERROR = "decode_error"
 
 
 @dataclass
@@ -70,6 +71,7 @@ class GranuleTilingInfo:
     collection_file_format: Optional[str] = None
     access_type: str = "direct"  # "direct" or "external"
     data_center_short_name: Optional[str] = None
+    collection_short_name_and_version: Optional[str] = None
 
     # Fields extracted from granule metadata (set in __post_init__)
     data_granule: Optional[DataGranule] = field(default=None, init=False)
@@ -256,9 +258,13 @@ class GranuleTilingInfo:
                 'Forbidden': IncompatibilityReason.FORBIDDEN,
                 'Operation timed out': IncompatibilityReason.TIMEOUT,
                 'Unauthorized': IncompatibilityReason.FORBIDDEN,
-                'is not aligned with its parents': IncompatibilityReason.GROUP_NOT_ALIGNED_WITH_PARENTS
+                'is not aligned with its parents': IncompatibilityReason.GROUP_NOT_ALIGNED_WITH_PARENTS,
+                'can only convert an array of size 1 to a Python scalar': IncompatibilityReason.DECODE_ERROR
             }
 
+            # There is another error
+            # AttributeError: 'NoneType' object has no attribute 'split'
+            # arising from h5netcdf that I cannot reason to have an error different than CANT_OPEN_FILE
             self.incompatible_reason = next(
                 (reason for phrase, reason in error_mappings.items() if phrase in error_msg),
                 IncompatibilityReason.CANT_OPEN_FILE  # default
@@ -401,6 +407,7 @@ class GranuleTilingInfo:
         """
         return {
             "collection_concept_id": self.collection_concept_id,
+            "collection_short_name_and_version": self.collection_short_name_and_version,
             "concept_id": self.concept_id,
             "data_center": self.data_center_short_name,
             "data_url": self.data_url,

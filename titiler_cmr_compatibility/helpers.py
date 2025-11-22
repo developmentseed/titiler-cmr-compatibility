@@ -107,7 +107,7 @@ def check_for_groups(url: str, data_center_name: str) -> Optional[List[str]]:
     # Get groups from the datatree
     if hasattr(dt, 'groups'):
         groups = list(dt.groups)
-        if groups and len(groups) > 1:  # More than just root group
+        if groups and len(groups) > 0:
             logger.info(f"Found groups in {url}: {groups}")
             return groups
 

@@ -132,7 +132,7 @@ def fetch_random_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
 
         if granules:
             return granules[0], total_num_granules
-        return None
+        return None, None
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching granule metadata for collection {concept_id}: {e}")
         raise
