@@ -45,11 +45,11 @@ def with_timeout(seconds=60):
         return wrapper
     return decorator
 
-@retry(wait=wait_fixed(1), stop=(stop_after_attempt(3)))
+@retry(wait=wait_fixed(2), stop=stop_after_attempt(5))
 def _get_s3fs_session_with_retries(daac: str):
     return earthaccess.get_s3fs_session(daac=daac)
 
-@with_timeout(seconds=120)
+@with_timeout(seconds=60)
 def open_xarray_dataset(url, data_center_name):
     """
     Open a NetCDF URL that may be HTTPS or S3 and return the dataset.
@@ -68,23 +68,19 @@ def open_xarray_dataset(url, data_center_name):
     logger.info(f"Opening xarray dataset from {url}")
     scheme = urlparse(url).scheme.lower()
 
-    try:
-        if scheme in ("http", "https"):
-            fs = earthaccess.get_fsspec_https_session()
-            return xr.open_dataset(fs.open(url), decode_times=False)
-        elif scheme == "s3":
-            s3 = _get_s3fs_session_with_retries(daac=data_center_name)
-            return xr.open_dataset(s3.open(url, "rb"), decode_times=False)
-        else:
-            raise ValueError(f"Unsupported URL scheme: {scheme}")
-    except TimeoutError:
-        logger.error(f"Timeout opening xarray dataset from {url}")
-        raise
-    except Exception as e:
-        logger.error(f"Error opening xarray dataset from {url}: {e}")
-        raise
+    # we use engine h5netcdf because there are no zarr stores currently catalogued and using 
+    # this specific engine helps surface the "not a valid signature for netCDF-4" error, as opposed to the
+    # "no engine found" error.
+    if scheme in ("http", "https"):
+        fs = earthaccess.get_fsspec_https_session()
+        return xr.open_dataset(fs.open(url), engine="h5netcdf", decode_times=False)
+    elif scheme == "s3":
+        s3 = _get_s3fs_session_with_retries(daac=data_center_name)
+        return xr.open_dataset(s3.open(url, "rb"), engine="h5netcdf", decode_times=False)
+    else:
+        raise ValueError(f"Unsupported URL scheme: {scheme}")
 
-@with_timeout(seconds=120)
+@with_timeout(seconds=60)
 def check_for_groups(url: str, data_center_name: str) -> Optional[List[str]]:
     """
     Check if a file has a group structure using xarray.open_datatree.
@@ -99,30 +95,26 @@ def check_for_groups(url: str, data_center_name: str) -> Optional[List[str]]:
     logger.info(f"Checking for group structure in {url}")
     scheme = urlparse(url).scheme.lower()
 
-    try:
-        if scheme in ("http", "https"):
-            fs = earthaccess.get_fsspec_https_session()
-            dt = open_datatree(fs.open(url), decode_times=False)
-        elif scheme == "s3":
-            s3 = _get_s3fs_session_with_retries(daac=data_center_name)
-            dt = open_datatree(s3.open(url, "rb"), decode_times=False)
-        else:
-            return None
-
-        # Get groups from the datatree
-        if hasattr(dt, 'groups'):
-            groups = list(dt.groups)
-            if groups and len(groups) > 1:  # More than just root group
-                logger.info(f"Found groups in {url}: {groups}")
-                return groups
-
-        return None
-    except Exception as e:
-        logger.warning(f"Could not open datatree for {url}: {e}")
+    if scheme in ("http", "https"):
+        fs = earthaccess.get_fsspec_https_session()
+        dt = open_datatree(fs.open(url), decode_times=False)
+    elif scheme == "s3":
+        s3 = _get_s3fs_session_with_retries(daac=data_center_name)
+        dt = open_datatree(s3.open(url, "rb"), decode_times=False)
+    else:
         return None
 
+    # Get groups from the datatree
+    if hasattr(dt, 'groups'):
+        groups = list(dt.groups)
+        if groups and len(groups) > 0:
+            logger.info(f"Found groups in {url}: {groups}")
+            return groups
 
-@with_timeout(seconds=120)
+    return None
+
+
+@with_timeout(seconds=60)
 def open_rasterio_dataset(url, data_center_name):
     """
     Open a rasterio dataset from a URL that may be HTTPS or S3.
@@ -141,18 +133,11 @@ def open_rasterio_dataset(url, data_center_name):
     logger.info(f"Opening rasterio dataset from {url}")
     scheme = urlparse(url).scheme.lower()
 
-    try:
-        if scheme in ("http", "https"):
-            fs = earthaccess.get_fsspec_https_session()
-            return rasterio.open(fs.open(url))
-        elif scheme == "s3":
-            s3 = _get_s3fs_session_with_retries(daac=data_center_name)
-            return rasterio.open(s3.open(url, "rb"))
-        else:
-            raise ValueError(f"Unsupported URL scheme: {scheme}")
-    except TimeoutError:
-        logger.error(f"Timeout opening rasterio dataset from {url}")
-        raise
-    except Exception as e:
-        logger.error(f"Error opening rasterio dataset from {url}: {e}")
-        raise
+    if scheme in ("http", "https"):
+        fs = earthaccess.get_fsspec_https_session()
+        return rasterio.open(fs.open(url))
+    elif scheme == "s3":
+        s3 = _get_s3fs_session_with_retries(daac=data_center_name)
+        return rasterio.open(s3.open(url, "rb"))
+    else:
+        raise ValueError(f"Unsupported URL scheme: {scheme}")

@@ -1,3 +1,10 @@
+# TiTiler-CMR Compatibility
+
+This repository contains code for testing collections in CMR with TiTiler-CMR
+
+## How to use it
+
+Instead of calling the TiTiler-CMR API directly, we install it as a git submodule. This gets around any networking limitations and slow downs of using the actual API and also allows to make small fixes to the titiler-cmr codebase (which will be addressed in near-future TiTiler-CMR releases).
 
 ```bash
 git clone https://github.com/developmentseed/titiler-cmr-compatibility.git
@@ -7,29 +14,26 @@ pip install -e ./titiler_cmr
 pip install -r requirements.txt
 ```
 
-Running the tests:
+Running tests:
 
 ```bash
-python run_test.py --parallel --num-workers 8 > output.log 2>&1
+python -m titiler_cmr_compatibility.cli
 ```
 
-To run a test using external links:
+But you probably don't want to do that since it will process >10k collections sequentially.
+
+You can use the help argument to see the CLI options, but I recommend heading to [`METHODOLOGY.md`](./METHODOLOGY.md).
 
 ```bash
-export TITILER_CMR_S3_AUTH_ACCESS=external
-python run_test.py --collection-id C2076106409-LPCLOUD --access-type external
+python -m titiler_cmr_compatibility.cli --help
 ```
 
+## What else is here?
 
-TODO:
+* [METHODOLOGY.md](./METHODOLOGY.md): The methodology documentation explains the testing steps.
+* [LITHOPS_WORKFLOW.md](./LITHOPS_WORKFLOW.md): The lithops workflow documentation how to setup lithops and use lithops parallel processing.
+* [QUERY_REPROCESSING.md](./QUERY_REPROCESSING.md): The query reprocessing documentation explains how to use the CLI to reprocess any failed collections.
 
-* test L2 collections
-* determine why so many more NetCDF-4 datasets were deemed compatible [here](https://github.com/developmentseed/datacube-guide/blob/main/docs/visualization/titiler/titiler-cmr/test-netcdf4-datasets.ipynb)
-  * many collections are L2 and not actually tilable
-  * statistics returned 0 values but still evaluated to compatible
-  * tiling is not actually tested
-* do a fuzzy match on variable selection or otherwise improve variable / band selection
-* Address missing band information for rasterio datasets
-* Sometimes getting no tile for 0-0-0
-* documentation
+
+
 

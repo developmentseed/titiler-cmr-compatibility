@@ -12,6 +12,7 @@ from typing import Optional, List, Dict, Any
 import requests
 
 from .constants import GRANULES_SEARCH_URL, COLLECTIONS_SEARCH_URL
+from .get_eosdis_providers import get_eosdis_shortnames
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +39,11 @@ def fetch_cmr_collections(
     # These params return matching collections exactly the same number as the search UI (10,752)
     params = {
         "page_size": page_size,
+        # only include collections with granules (https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html#c-has-granules)
+        "has_granules": True,
         "sort_key[]": "-usage_score",
-        # sourced from https://cmr.earthdata.nasa.gov/search/providers
-        "provider[]": "GHRC,ASF,GESDISCCLD,GESDISCCLD,LARC_CLOUD,NSIDCV0,NSIDC_ECS,NSIDC_CPRD,ORNL_CLOUD,LAADS,LARC_ASDC,LPDAAC_ECS,OB_DAAC,GHRC_DAAC,LARC,LPCUMULUS,GHRC_CLOUD,LPCLOUD,ORNL_DAAC,POCLOUD,PODAAC,SEDAC,GES_DISC,ESDIS,OB_CLOUD".split(",")
+        # subset collections to those which are identifiably from a DAAC https://cmr.earthdata.nasa.gov/search/providers
+        "provider[]": get_eosdis_shortnames()
     }
 
     # Add concept_id parameter if provided for debugging
@@ -111,11 +114,10 @@ def fetch_random_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
         total_num_granules = response.json().get("hits")
 
         if not total_num_granules:
-            return None
+            return None, None
 
         # CMR has a 1 million item pagination limit
-        params["offset"] = random.randint(0, min(total_num_granules, int(1e6)))
-
+        params["offset"] = random.randint(0, min(total_num_granules - 1, int(1e6)))
         # Second request to fetch the random granule
         response = requests.get(
             GRANULES_SEARCH_URL,
@@ -130,7 +132,7 @@ def fetch_random_granule_metadata(concept_id: str) -> Optional[Dict[str, Any]]:
 
         if granules:
             return granules[0], total_num_granules
-        return None
+        return None, None
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching granule metadata for collection {concept_id}: {e}")
         raise

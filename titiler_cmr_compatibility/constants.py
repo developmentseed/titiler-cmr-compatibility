@@ -9,7 +9,7 @@ TITILER_CMR_ENDPOINT = "https://staging.openveda.cloud/api/titiler-cmr"
 GRANULES_SEARCH_URL = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
 COLLECTIONS_SEARCH_URL = "https://cmr.earthdata.nasa.gov/search/collections.umm_json"
 
-# File Formats and Extensions
+# Supported File Formats and Extensions
 HDF_FORMATS = ["HDF", "HDF5", "HDF-EOS5"]
 HDF_EXTENSIONS = ["hdf", "hdf5", "h5"]
 

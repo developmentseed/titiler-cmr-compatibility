@@ -10,7 +10,7 @@ from typing import Dict, Optional, Tuple, Any
 
 
 def parse_temporal(umm: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
-    temporal = umm.get("TemporalExtent", [])
+    temporal = umm.get("TemporalExtent", {})
     range_date_time = temporal.get("RangeDateTime", {})
     begin = range_date_time.get("BeginningDateTime", None)
     end = range_date_time.get("EndingDateTime", None)

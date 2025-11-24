@@ -43,6 +43,9 @@ class IncompatibilityReason(str, Enum):
     CANT_EXTRACT_VARIABLES = "cant_extract_variables"
     GROUP_STRUCTURE = "group_structure"
     NO_XY_DIMENSIONS = "no_xy_dimensions"
+    FORBIDDEN = "forbidden"
+    GROUP_NOT_ALIGNED_WITH_PARENTS = "group_not_aligned_with_parents"
+    DECODE_ERROR = "decode_error"
 
 
 @dataclass
@@ -68,6 +71,7 @@ class GranuleTilingInfo:
     collection_file_format: Optional[str] = None
     access_type: str = "direct"  # "direct" or "external"
     data_center_short_name: Optional[str] = None
+    collection_short_name_and_version: Optional[str] = None
 
     # Fields extracted from granule metadata (set in __post_init__)
     data_granule: Optional[DataGranule] = field(default=None, init=False)
@@ -133,6 +137,7 @@ class GranuleTilingInfo:
                 # Fall back to "external" if "direct" returns nothing
                 if self.access_type == "direct":
                     logger.warning(f"No direct access links found for granule {self.concept_id}, trying external")
+                    self.access_type = "external"
                     data_links = self.data_granule.data_links(access="external")
                     if data_links:
                         self.data_url = data_links[0]
@@ -244,10 +249,26 @@ class GranuleTilingInfo:
                     self.incompatible_reason = IncompatibilityReason.CANT_EXTRACT_VARIABLES
 
         except Exception as e:
-            error_msg = f"Error opening {self.data_url}: {e}"
+            error_msg = f"Error opening: {e}"
             logger.error(error_msg)
             self.error_message = error_msg
-            self.incompatible_reason = IncompatibilityReason.CANT_OPEN_FILE
+            error_mappings = {
+                'is not the signature of a valid netCDF4 file': IncompatibilityReason.UNSUPPORTED_FORMAT,
+                'Cannot seek streaming HTTP file': IncompatibilityReason.UNSUPPORTED_FORMAT,
+                'Forbidden': IncompatibilityReason.FORBIDDEN,
+                'Operation timed out': IncompatibilityReason.TIMEOUT,
+                'Unauthorized': IncompatibilityReason.FORBIDDEN,
+                'is not aligned with its parents': IncompatibilityReason.GROUP_NOT_ALIGNED_WITH_PARENTS,
+                'can only convert an array of size 1 to a Python scalar': IncompatibilityReason.DECODE_ERROR
+            }
+
+            # There is another error
+            # AttributeError: 'NoneType' object has no attribute 'split'
+            # arising from h5netcdf that I cannot reason to have an error different than CANT_OPEN_FILE
+            self.incompatible_reason = next(
+                (reason for phrase, reason in error_mappings.items() if phrase in error_msg),
+                IncompatibilityReason.CANT_OPEN_FILE  # default
+            )
 
     def _setup_reader(self):
         """Setup the appropriate reader and reader options based on backend."""
@@ -268,7 +289,8 @@ class GranuleTilingInfo:
                 self.variable = self.data_variables[0]
             self.reader_options = {
                 "variable": self.variable,
-                "opener": xarray_open_dataset
+                "opener": xarray_open_dataset,
+                "decode_times": False,
             }
 
     def generate_tiles_url_for_granule(
@@ -304,21 +326,14 @@ class GranuleTilingInfo:
                 (item for item in self.data_variables if item in known_variables),
                 None
             )
-            if self.temporal_extent:
-                datetime_param = '/'.join(self.temporal_extent)
-                if variable:
-                    return f"{base_url}&variable={variable}&datetime={datetime_param}"
-                elif isinstance(self.data_variables, list):
-                    return f"{base_url}&variable={self.data_variables[0]}&datetime={datetime_param}"
+            if variable:
+                return f"{base_url}&variable={variable}"
+            elif isinstance(self.data_variables, list) and len(self.data_variables) >= 1:
+                return f"{base_url}&variable={self.data_variables[0]}"
             else:
-                if not variable:
-                    logger.warning(
-                        f"No known variable found for xarray backend in granule {self.concept_id}"
-                    )
-                if not self.temporal_extent:
-                    logger.warning(
-                        f"No temporal extent found for granule {self.concept_id}"
-                    )
+                logger.warning(
+                    f"No variable found for xarray backend in granule {self.concept_id}"
+                )
                 return None
 
         return None
@@ -351,7 +366,8 @@ class GranuleTilingInfo:
             "tile_x": tile_x,
             "tile_y": tile_y,
             "tile_z": tile_z,
-            "cmr_query": cmr_query
+            "cmr_query": cmr_query,
+            "access_type": self.access_type
         }
 
         try:
@@ -374,10 +390,11 @@ class GranuleTilingInfo:
 
             # Check for specific error types
             error_str = str(e).lower()
-            if "couldn't find x/y dimensions" in error_str or "x/y dimensions" in error_str:
+            if "couldn't find x/y dimensions" in error_str:
                 self.incompatible_reason = IncompatibilityReason.NO_XY_DIMENSIONS
             else:
                 self.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED
+                raise
 
             return False
 
@@ -390,6 +407,7 @@ class GranuleTilingInfo:
         """
         return {
             "collection_concept_id": self.collection_concept_id,
+            "collection_short_name_and_version": self.collection_short_name_and_version,
             "concept_id": self.concept_id,
             "data_center": self.data_center_short_name,
             "data_url": self.data_url,
