@@ -390,7 +390,7 @@ class GranuleTilingInfo:
 
             # Check for specific error types
             error_str = str(e).lower()
-            if "couldn't find x/y dimensions" in error_str or "x/y dimensions" in error_str:
+            if "couldn't find x/y dimensions" in error_str:
                 self.incompatible_reason = IncompatibilityReason.NO_XY_DIMENSIONS
             else:
                 self.incompatible_reason = IncompatibilityReason.TILE_GENERATION_FAILED

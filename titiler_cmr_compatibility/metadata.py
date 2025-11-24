@@ -185,7 +185,6 @@ def extract_random_granule_info(
 
     return extract_granule_tiling_info(
         granule=granule,
-        collection_concept_id=collection_concept_id,
         collection_file_format=collection_file_format,
         collection_data_center=collection_data_center,
         collection_short_name_and_version=short_name_and_version,
