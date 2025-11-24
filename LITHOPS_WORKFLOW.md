@@ -1,10 +1,10 @@
 # Lithops Distributed Processing Workflow
 
-This document describes how to use the Lithops-based distributed processing workflow for processing CMR collections. This approach is more fault-tolerant than the multiprocessing approach and allows for easy resumption of failed jobs.
+This document describes how to use the Lithops-based distributed processing workflow for processing CMR collections.
 
 ## Overview
 
-The Lithops workflow consists of three simple phases:
+The Lithops workflow consists of three phases:
 
 1. **Setup**: Fetch all collection IDs from CMR and store them in `unprocessed/` directory
 2. **Process**: Process all collections in `unprocessed/`, move them to `processed/` when done. Run repeatedly until all are processed.
@@ -13,8 +13,6 @@ The Lithops workflow consists of three simple phases:
 The workflow uses two S3 directories to track state:
 - `unprocessed/`: Collections waiting to be processed
 - `processed/`: Collections that have been successfully processed
-
-This eliminates expensive S3 listing operations and makes it trivial to resume processing.
 
 ## Prerequisites
 
@@ -150,13 +148,11 @@ lithops test
 
 This will run a simple "Hello World" function on AWS Lambda to verify your setup.
 
-### 5. Create an S3 bucket for tracking collection processing
+### 5. (Optional) Create an S3 bucket for tracking collection processing
 
 ```bash
 aws s3 mb s3://veda-odd-scratch
 ```
-
-Choose a unique bucket name. This bucket will store the collection directories and processing results.
 
 ## Usage
 
@@ -169,7 +165,7 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-setup \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections-11-23 \
+  --s3-prefix titiler-cmr-compatibility/collections-11-24 \
   --total-collections 10800 \
   --batch-size 100
 ```
@@ -194,14 +190,14 @@ This phase processes all collections in `unprocessed/`. For each successful proc
 1. Result is written to `processed/CONCEPT_ID/status=.../reason=.../result.json`
 2. Collection is removed from `unprocessed/`
 
-Simply run this command repeatedly until all collections are processed:
+You can run this command repeatedly until all collections are processed:
 
 ```bash
 python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-process \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections-11-23 \
+  --s3-prefix titiler-cmr-compatibility/collections-11-24 \
   --access-type direct
 ```
 
@@ -225,24 +221,13 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-status \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections-11-23
+  --s3-prefix titiler-cmr-compatibility/collections-11-24
 ```
 
 This shows:
 - Total collections
 - Processed count and percentage
 - Unprocessed count and percentage
-
-
-Or check S3 directly:
-
-```bash
-# Count unprocessed collections
-aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/unprocessed/ | wc -l
-
-# Count processed collections
-aws s3 ls s3://veda-odd-scratch/titiler-cmr-compatibility/collections/processed/ | wc -l
-```
 
 ### Phase 3: Download Results
 
@@ -253,10 +238,10 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-download \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections-11-23
+  --s3-prefix titiler-cmr-compatibility/collections-11-24
 ```
 
-This will create a single JSON file containing all collection results.
+This will create a single parquet file containing all collection results.
 
 ## Troubleshooting
 
@@ -292,10 +277,4 @@ python -m titiler_cmr_compatibility.cli \
 aws s3 mv s3://veda-odd-scratch/titiler-cmr-compatibility/collections/unprocessed/C1234567890-PROVIDER/ \
         s3://veda-odd-scratch/titiler-cmr-compatibility/collections/skipped/C1234567890-PROVIDER/ --recursive
 ```
-
-## Cost Considerations
-
-- **AWS Lambda**: Charges per execution time (GB-seconds)
-- **S3**: Charges for storage and requests
-- **Example**: Processing 10,000 collections with 1GB Lambda for 30s each ≈ 83 Lambda GB-hours ≈ $1.40
 
