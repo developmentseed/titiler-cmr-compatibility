@@ -169,7 +169,7 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-setup \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections-11-22 \
+  --s3-prefix titiler-cmr-compatibility/collections-11-23 \
   --total-collections 10800 \
   --batch-size 100
 ```
@@ -201,7 +201,7 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-process \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections-11-21 \
+  --s3-prefix titiler-cmr-compatibility/collections-11-23 \
   --access-type direct
 ```
 
@@ -225,7 +225,7 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-status \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections
+  --s3-prefix titiler-cmr-compatibility/collections-11-23
 ```
 
 This shows:
@@ -253,7 +253,7 @@ python -m titiler_cmr_compatibility.cli \
   --lithops \
   --lithops-download \
   --s3-bucket veda-odd-scratch \
-  --s3-prefix titiler-cmr-compatibility/collections-11-21
+  --s3-prefix titiler-cmr-compatibility/collections-11-23
 ```
 
 This will create a single JSON file containing all collection results.
