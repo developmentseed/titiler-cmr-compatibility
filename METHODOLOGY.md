@@ -114,18 +114,24 @@ The system attempts to generate a test tile using the TiTiler-CMR backend:
 
 1. **CMR query construction**: Create query with collection concept ID and temporal extent
 2. **Reader initialization**: Set up rasterio or xarray reader with appropriate options
-3. **CMR backend execution**: Use `CMRBackend` to fetch granule and generate tile
-4. **Tile rendering**: Render the tile at the specified coordinates
+3. **Compatibility probe**: Call `/compatibility`, retrying transient 5xx service failures before recording a failure
+4. **CMR backend execution**: Use `CMRBackend` to fetch granule and generate tile
+5. **BBox rendering**: Render the full granule CMR bounding box first. If the request is rejected because the AOI/array is too large, or if a large xarray grid returns a transient full-bbox service failure, retry deterministic smaller bboxes within the granule extent.
 
 **Key code location**: `tiling.py#test_tiling`
 
 #### Success Criteria
 
-A collection is marked as **tiling compatible** (`tiling_compatible: true`) if:
-- File format is supported
-- File can be opened successfully
-- Variables can be extracted
-- A tile can be generated without errors
+A collection is marked as **tiling compatible** (`tiling_compatible: true`) only when the TiTiler-CMR
+`/bbox` render probe returns HTTP 200. HTTP 204 responses are recorded as inconclusive
+`no_rendered_content` failures because the endpoint returned no image content.
+
+For xarray assets, the bbox probe tries the variable recommended by the `/compatibility` response link
+first, then a bounded ranked fallback list. Non-spatial singleton dimensions are not forced through
+`sel` because TiTiler-CMR can render those directly. Each variable is first tested against the full
+granule bbox. Smaller deterministic bboxes are only attempted when the service reports that the full AOI/array is too
+large, or when a large xarray grid returns a transient full-bbox service failure. The run records every bbox
+probe attempt, including status code, variable source, group, probe bbox, URL, and an error snippet.
 
 #### Failure Modes
 
@@ -163,18 +169,30 @@ For each collection tested, the system records:
 
 - **Format information**:
   - `format`: File format from metadata
-  - `extension`: File extension
+  - `extension`: Legacy file extension from the first granule related URL
+  - `assessed_asset_href`, `assessed_asset_extension`, and `assessed_asset_scheme`: Asset selected by the
+    TiTiler-CMR compatibility response
   - `backend`: Backend used (`rasterio` or `xarray`)
 
 - **Variables**:
   - `data_variables`: List of available variables
   - `variable`: Selected variable for tiling (xarray only)
+  - `selected_variable_source`: Whether the selected variable came from the compatibility link, ranked
+    fallback, capped fallback list, or rasterio no-variable path
 
 - **Compatibility results**:
-  - `tiling_compatible`: Boolean success/failure
-  - `incompatible_reason`: Categorized failure reason (if applicable)
-  - `error_message`: Detailed error message
-  - `tiles_url`: Generated tile URL (if successful)
+  - `tiling_compatible`: Boolean success/failure retained for the compatibility report table
+  - `incompatible_reason`: Legacy categorized failure reason (if applicable)
+  - `error_message`: Human-readable failure summary
+  - `assessment_status`: High-level outcome (`compatible`, `incompatible`, `inconclusive`, or `assessment_error`)
+  - `failure_stage`: Assessment step that failed, such as `sampling`, `compatibility`, `bbox_resolution`, or `bbox_probe`
+  - `failure_category` and `failure_subcategory`: Machine-readable failure classification for distinguishing
+    unsupported data from metadata gaps and service/runtime failures
+  - `failure_http_status_code`, `failure_endpoint`, `failure_url`, and `raw_error_body`: Request-level
+    diagnostics for failed TiTiler-CMR probes
+  - `bbox_attempt_count` and `bbox_attempts`: Serialized attempt history for bounded xarray variable
+    probing and multi-bbox global/swath probing, including full request URLs with query parameters
+  - `tiles_url`: Generated tile URL (if successful), including query parameters
   - `groups`: List of detected groups (if applicable)
 
 **Key code location**: `tiling.py#to_report_dict`)

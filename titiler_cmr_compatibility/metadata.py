@@ -153,7 +153,7 @@ def extract_processing_level(collection: Dict[str, Any]) -> str:
     processing_level_id = processing_level.get("Id", None)
     return processing_level_id
 
-def extract_random_granule_info(
+async def extract_random_granule_info(
     collection: Dict[str, Any],
     access_type: Optional[str] = "direct"
 ) -> Optional[GranuleTilingInfo]:
@@ -178,7 +178,7 @@ def extract_random_granule_info(
     processing_level = extract_processing_level(collection)
 
     # Fetch and process random granule
-    granule, num_granules = fetch_random_granule_metadata(collection_concept_id)
+    granule, num_granules = await fetch_random_granule_metadata(collection_concept_id)
     if not granule:
         logger.warning(f"No granule found for collection {collection_concept_id}")
         return None

@@ -17,7 +17,7 @@ import earthaccess
 from lithops import FunctionExecutor
 import pandas as pd
 
-from .api import fetch_cmr_collections, fetch_granule_by_id
+from .api import fetch_cmr_collections
 from .metadata import extract_random_granule_info
 from .tiling import GranuleTilingInfo, IncompatibilityReason
 
